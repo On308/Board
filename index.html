@@ -29,67 +29,6 @@
                 }
             }
         }
-		// 1. 전체 게시글 데이터 JSON 다운로드 (백업)
-function exportToJson() {
-    if (posts.length === 0) {
-        alert("다운로드할 게시글 데이터가 없습니다.");
-        return;
-    }
-
-    const dataStr = JSON.stringify(posts, null, 2);
-    const blob = new Blob([dataStr], { type: "application/json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-    
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `novel_archive_backup_${dateStr}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    showToast("전체 데이터가 JSON 파일로 다운로드되었습니다.");
-}
-
-// 2. JSON 파일 업로드 및 데이터 복원 (다른 브라우저에서 사용 시)
-function importFromJson(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    if (!file.name.endsWith('.json')) {
-        alert('.json 확장자의 파일만 업로드할 수 있습니다.');
-        return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const importedData = JSON.parse(e.target.result);
-
-            if (!Array.isArray(importedData)) {
-                alert("올바른 게시글 데이터(JSON 배열) 형식이 아닙니다.");
-                return;
-            }
-
-            if (confirm("기존 저장된 데이터를 덮어쓰고 가져온 JSON 데이터로 복원하시겠습니까?")) {
-                posts = importedData;
-                savePosts();
-                selectedPostIds.clear();
-                currentPage = 1;
-                renderListView();
-                showToast("JSON 데이터 복원이 완료되었습니다.");
-            }
-        } catch (err) {
-            alert("JSON 파일을 파싱하는 중 오류가 발생했습니다. 올바른 백업 파일인지 확인해 주세요.");
-        }
-    };
-
-    reader.readAsText(file, 'UTF-8');
-    event.target.value = ''; // 동일 파일 재업로드 가능하도록 초기화
-}
     </script>
     <style>
         .novel-content {
@@ -118,7 +57,6 @@ function importFromJson(event) {
             </div>
 
             <div class="flex items-center space-x-2">
-                <!-- 새 글 작성 시 openNewPostEditor() 호출로 ID 초기화 -->
                 <button onclick="openNewPostEditor()" class="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition flex items-center space-x-1.5 shadow-sm">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                     <span>새 글 작성</span>
@@ -126,21 +64,19 @@ function importFromJson(event) {
                 <button onclick="resetToSampleData()" title="샘플 데이터 복원" class="p-2 text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded-lg transition">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                 </button>
-				<!-- 상단 헤더 내부 (resetToSampleData 버튼 옆) -->
-<div class="flex items-center space-x-1 border-l border-stone-200 pl-2 ml-1">
-    <!-- JSON 다운로드 (내보내기) 버튼 -->
-    <button onclick="exportToJson()" title="전체 데이터 JSON 다운로드" class="px-2.5 py-1.5 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition flex items-center space-x-1 text-xs font-medium">
-        <svg class="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-        <span>JSON 백업</span>
-    </button>
 
-    <!-- JSON 업로드 (다른 브라우저에서 불러오기) 버튼 -->
-    <label title="JSON 데이터 불러오기" class="px-2.5 py-1.5 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition flex items-center space-x-1 text-xs font-medium cursor-pointer">
-        <svg class="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-        <span>JSON 복원</span>
-        <input type="file" id="json-file-input" accept=".json" onchange="importFromJson(event)" class="hidden">
-    </label>
-</div>
+                <div class="flex items-center space-x-1 border-l border-stone-200 pl-2 ml-1">
+                    <button onclick="exportToJson()" title="전체 데이터 JSON 다운로드" class="px-2.5 py-1.5 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition flex items-center space-x-1 text-xs font-medium">
+                        <svg class="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        <span>JSON 백업</span>
+                    </button>
+
+                    <label title="JSON 데이터 불러오기" class="px-2.5 py-1.5 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition flex items-center space-x-1 text-xs font-medium cursor-pointer">
+                        <svg class="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        <span>JSON 복원</span>
+                        <input type="file" id="json-file-input" accept=".json" onchange="importFromJson(event)" class="hidden">
+                    </label>
+                </div>
             </div>
         </div>
     </header>
@@ -348,7 +284,7 @@ function importFromJson(event) {
                         <label class="block text-xs font-bold uppercase text-stone-600">본문 *</label>
                         <span id="editor-live-char-count" class="text-xs font-mono text-stone-500">0자 (공백 포함)</span>
                     </div>
-                    <textarea id="editor-content" required rows="18" oninput="updateLiveCharCount()" placeholder="소설 본문을 입력하거나 위에서 .txt 파일로 가져오세요..." class="w-full p-4 border border-stone-300 rounded-lg text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-brand-500 font-sans resize-y"></textarea>
+                    <textarea id="editor-content" required rows="20" oninput="updateLiveCharCount()" placeholder="소설 본문을 입력하거나 위에서 .txt 파일로 가져오세요..." class="w-full p-4 border border-stone-300 rounded-lg text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-brand-500 font-sans resize-y"></textarea>
                 </div>
 
                 <div class="flex justify-end space-x-3 pt-3 border-t border-stone-100">
@@ -397,6 +333,16 @@ function importFromJson(event) {
 
         function getCharCount(str) {
             return str ? str.length : 0;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
         }
 
         function getInitialSamplePosts() {
@@ -478,7 +424,6 @@ function importFromJson(event) {
             }
         }
 
-        // 새 글 전용 에디터 열기 (ID 초기화)
         function openNewPostEditor() {
             currentPostId = null;
             navigateTo('editor');
@@ -518,6 +463,66 @@ function importFromJson(event) {
                 toast.classList.remove('opacity-100', 'translate-y-0');
                 toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
             }, 2500);
+        }
+
+        function exportToJson() {
+            if (posts.length === 0) {
+                alert("다운로드할 게시글 데이터가 없습니다.");
+                return;
+            }
+
+            const dataStr = JSON.stringify(posts, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+
+            const now = new Date();
+            const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+            
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `novel_archive_backup_${dateStr}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showToast("전체 데이터가 JSON 파일로 다운로드되었습니다.");
+        }
+
+        function importFromJson(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!file.name.endsWith('.json')) {
+                alert('.json 확장자의 파일만 업로드할 수 있습니다.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+
+                    if (!Array.isArray(importedData)) {
+                        alert("올바른 게시글 데이터(JSON 배열) 형식이 아닙니다.");
+                        return;
+                    }
+
+                    if (confirm("기존 저장된 데이터를 덮어쓰고 가져온 JSON 데이터로 복원하시겠습니까?")) {
+                        posts = importedData;
+                        savePosts();
+                        selectedPostIds.clear();
+                        currentPage = 1;
+                        renderListView();
+                        showToast("JSON 데이터 복원이 완료되었습니다.");
+                    }
+                } catch (err) {
+                    alert("JSON 파일을 파싱하는 중 오류가 발생했습니다. 올바른 백업 파일인지 확인해 주세요.");
+                }
+            };
+
+            reader.readAsText(file, 'UTF-8');
+            event.target.value = '';
         }
 
         function toggleSelectPost(id, isChecked) {
@@ -846,20 +851,36 @@ function importFromJson(event) {
 
                 commentEl.innerHTML = `
                     <div class="flex items-start justify-between">
-                        <div class="space-y-1">
+                        <div class="space-y-1 w-full">
                             <div class="flex items-center space-x-2">
-                                <span class="font-bold text-s text-stone-800">▷ 익명</span>
+                                <span class="font-bold text-xs text-stone-800">▷ 익명</span>
                                 <span class="text-xs text-stone-400 font-mono">${comment.createdAt}</span>
                             </div>
                             <div class="text-sm text-stone-800 novel-content whitespace-pre-line leading-relaxed">${escapeHtml(comment.content)}</div>
-							<div align="right">
-								<button onclick="toggleReplyBox(${comment.id})" class="text-s font-medium text-brand-600 hover:text-brand-800 bg-brand-50 px-2.5 py-1 rounded-md transition">
-									답글 달기
-								</button>
+                            <div class="flex justify-end space-x-2 pt-1">
+                                <button onclick="toggleReplyBox(${comment.id})" class="text-xs font-medium text-brand-600 hover:text-brand-800 bg-brand-50 px-2.5 py-1 rounded-md transition">
+                                    답글 달기
+                                </button>
+                                <button onclick="toggleEditCommentBox(${comment.id})" class="text-xs font-medium text-stone-600 hover:text-stone-800 bg-stone-100 px-2.5 py-1 rounded-md transition">
+                                    수정
+                                </button>
+                                <button onclick="deleteComment(${comment.id})" class="text-xs font-medium text-red-600 hover:text-red-800 bg-red-50 px-2.5 py-1 rounded-md transition">
+                                    삭제
+                                </button>
                             </div>
                         </div>
                     </div>
 
+                    <!-- 댓글 수정 폼 -->
+                    <div id="edit-comment-box-${comment.id}" class="hidden pt-2 space-y-2">
+                        <textarea id="edit-comment-input-${comment.id}" rows="20" class="w-full p-2.5 border border-stone-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">${escapeHtml(comment.content)}</textarea>
+                        <div class="flex justify-end space-x-2">
+                            <button onclick="toggleEditCommentBox(${comment.id})" class="px-3 py-1 border border-stone-300 rounded-md text-xs text-stone-600">취소</button>
+                            <button onclick="submitEditComment(${comment.id})" class="px-3 py-1 bg-brand-600 text-white rounded-md text-xs font-medium">수정 완료</button>
+                        </div>
+                    </div>
+
+                    <!-- 답댓글 입력 폼 -->
                     <div id="reply-box-${comment.id}" class="hidden pl-6 pt-2 space-y-2">
                         <textarea id="reply-input-${comment.id}" rows="20" placeholder="답댓글을 작성하세요." class="w-full p-2.5 border border-stone-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"></textarea>
                         <div class="flex justify-end space-x-2">
@@ -868,15 +889,32 @@ function importFromJson(event) {
                         </div>
                     </div>
 
+                    <!-- 답댓글 목록 -->
                     <div class="pl-6 space-y-2.5 border-l-2 border-stone-100 mt-2">
                         ${(comment.replies || []).map(reply => `
                             <div class="bg-stone-50 p-3 rounded-lg space-y-1">
-                                <div class="flex items-center space-x-2">
-                                    <span class="text-xs text-stone-400">↳</span>
-                                    <span class="font-bold text-xs text-stone-700">▷ 익익명</span>
-                                    <span class="text-xs text-stone-400 font-mono">${reply.createdAt}</span>
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-xs text-stone-400">↳</span>
+                                        <span class="font-bold text-xs text-stone-700">▷ 익익명</span>
+                                        <span class="text-xs text-stone-400 font-mono">${reply.createdAt}</span>
+                                    </div>
+                                    <div class="flex items-center space-x-1.5">
+                                        <button onclick="toggleEditReplyBox(${reply.id})" class="text-[11px] font-medium text-stone-500 hover:text-stone-800">수정</button>
+                                        <span class="text-stone-300 text-[10px]">•</span>
+                                        <button onclick="deleteReply(${comment.id},${reply.id})" class="text-[11px] font-medium text-red-500 hover:text-red-700">삭제</button>
+                                    </div>
                                 </div>
                                 <div class="text-sm text-stone-800 pl-4 whitespace-pre-line leading-relaxed">${escapeHtml(reply.content)}</div>
+                                
+                                <!-- 답댓글 수정 폼 -->
+                                <div id="edit-reply-box-${reply.id}" class="hidden pt-2 space-y-2">
+                                    <textarea id="edit-reply-input-${reply.id}" rows="20" class="w-full p-2 border border-stone-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">${escapeHtml(reply.content)}</textarea>
+                                    <div class="flex justify-end space-x-2">
+                                        <button onclick="toggleEditReplyBox(${reply.id})" class="px-2.5 py-1 border border-stone-300 rounded-md text-xs text-stone-600">취소</button>
+                                        <button onclick="submitEditReply(${comment.id},${reply.id})" class="px-2.5 py-1 bg-brand-600 text-white rounded-md text-xs font-medium">수정 완료</button>
+                                    </div>
+                                </div>
                             </div>
                         `).join('')}
                     </div>
@@ -888,9 +926,17 @@ function importFromJson(event) {
 
         function toggleReplyBox(commentId) {
             const box = document.getElementById(`reply-box-${commentId}`);
-            if (box) {
-                box.classList.toggle('hidden');
-            }
+            if (box) box.classList.toggle('hidden');
+        }
+
+        function toggleEditCommentBox(commentId) {
+            const box = document.getElementById(`edit-comment-box-${commentId}`);
+            if (box) box.classList.toggle('hidden');
+        }
+
+        function toggleEditReplyBox(replyId) {
+            const box = document.getElementById(`edit-reply-box-${replyId}`);
+            if (box) box.classList.toggle('hidden');
         }
 
         function submitMainComment() {
@@ -948,6 +994,76 @@ function importFromJson(event) {
             showToast('답댓글이 등록되었습니다.');
         }
 
+        function submitEditComment(commentId) {
+            const input = document.getElementById(`edit-comment-input-${commentId}`);
+            const content = input.value.trim();
+            if (!content) {
+                alert('수정할 댓글 내용을 입력해 주세요.');
+                return;
+            }
+
+            const post = posts.find(p => p.id === currentPostId);
+            if (!post) return;
+
+            const comment = post.comments.find(c => c.id === commentId);
+            if (comment) {
+                comment.content = content;
+                savePosts();
+                renderDetailView();
+                showToast('댓글이 수정되었습니다.');
+            }
+        }
+
+        function deleteComment(commentId) {
+            if (!confirm('이 댓글을 삭제하시겠습니까?')) return;
+
+            const post = posts.find(p => p.id === currentPostId);
+            if (!post) return;
+
+            post.comments = post.comments.filter(c => c.id !== commentId);
+            savePosts();
+            renderDetailView();
+            showToast('댓글이 삭제되었습니다.');
+        }
+
+        function submitEditReply(commentId, replyId) {
+            const input = document.getElementById(`edit-reply-input-${replyId}`);
+            const content = input.value.trim();
+            if (!content) {
+                alert('수정할 답댓글 내용을 입력해 주세요.');
+                return;
+            }
+
+            const post = posts.find(p => p.id === currentPostId);
+            if (!post) return;
+
+            const comment = post.comments.find(c => c.id === commentId);
+            if (comment && comment.replies) {
+                const reply = comment.replies.find(r => r.id === replyId);
+                if (reply) {
+                    reply.content = content;
+                    savePosts();
+                    renderDetailView();
+                    showToast('답댓글이 수정되었습니다.');
+                }
+            }
+        }
+
+        function deleteReply(commentId, replyId) {
+            if (!confirm('이 답댓글을 삭제하시겠습니까?')) return;
+
+            const post = posts.find(p => p.id === currentPostId);
+            if (!post) return;
+
+            const comment = post.comments.find(c => c.id === commentId);
+            if (comment && comment.replies) {
+                comment.replies = comment.replies.filter(r => r.id !== replyId);
+                savePosts();
+                renderDetailView();
+                showToast('답댓글이 삭제되었습니다.');
+            }
+        }
+
         function downloadCurrentPostTxt() {
             const post = posts.find(p => p.id === currentPostId);
             if (!post) return;
@@ -990,7 +1106,6 @@ function importFromJson(event) {
             fileInput.value = '';
 
             if (currentPostId) {
-                // 수정 모드
                 const post = posts.find(p => p.id === currentPostId);
                 if (post) {
                     heading.innerText = "게시글 수정";
@@ -1000,7 +1115,6 @@ function importFromJson(event) {
                     contentInput.value = post.content;
                 }
             } else {
-                // 새 글 작성 모드
                 heading.innerText = "새 소설/게시글 작성";
                 postIdInput.value = "";
                 titleInput.value = "";
@@ -1067,7 +1181,6 @@ function importFromJson(event) {
             const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
 
             if (editingId) {
-                // 기존 게시글 수정
                 const post = posts.find(p => p.id === parseInt(editingId, 10));
                 if (post) {
                     post.title = title;
@@ -1078,7 +1191,6 @@ function importFromJson(event) {
                     navigateTo('detail', post.id);
                 }
             } else {
-                // 새 게시글 추가
                 const newId = posts.length > 0 ? Math.max(...posts.map(p => p.id)) + 1 : 1;
                 const newPost = {
                     id: newId,
@@ -1095,16 +1207,6 @@ function importFromJson(event) {
                 currentPostId = newPost.id;
                 navigateTo('detail', newPost.id);
             }
-        }
-
-        function escapeHtml(str) {
-            if (!str) return '';
-            return str
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
         }
 
         function renderApp() {
