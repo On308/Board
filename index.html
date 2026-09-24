@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>소설 백업 아카이브</title>
+    <!-- Google Fonts: Nanum Gothic -->
+    <link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#fdf8f6',
+                            100: '#f2e8e5',
+                            200: '#e8d5ce',
+                            500: '#c2785c',
+                            600: '#ab5e42',
+                            700: '#8e4931',
+                            900: '#432014',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['"Nanum Gothic"', 'sans-serif'],
+                    }
+                }
+            }
+        }
+		// 1. 전체 게시글 데이터 JSON 다운로드 (백업)
+function exportToJson() {
+    if (posts.length === 0) {
+        alert("다운로드할 게시글 데이터가 없습니다.");
+        return;
+    }
+
+    const dataStr = JSON.stringify(posts, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+    
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `novel_archive_backup_${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast("전체 데이터가 JSON 파일로 다운로드되었습니다.");
+}
+
+// 2. JSON 파일 업로드 및 데이터 복원 (다른 브라우저에서 사용 시)
+function importFromJson(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.json')) {
+        alert('.json 확장자의 파일만 업로드할 수 있습니다.');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const importedData = JSON.parse(e.target.result);
+
+            if (!Array.isArray(importedData)) {
+                alert("올바른 게시글 데이터(JSON 배열) 형식이 아닙니다.");
+                return;
+            }
+
+            if (confirm("기존 저장된 데이터를 덮어쓰고 가져온 JSON 데이터로 복원하시겠습니까?")) {
+                posts = importedData;
+                savePosts();
+                selectedPostIds.clear();
+                currentPage = 1;
+                renderListView();
+                showToast("JSON 데이터 복원이 완료되었습니다.");
+            }
+        } catch (err) {
+            alert("JSON 파일을 파싱하는 중 오류가 발생했습니다. 올바른 백업 파일인지 확인해 주세요.");
+        }
+    };
+
+    reader.readAsText(file, 'UTF-8');
+    event.target.value = ''; // 동일 파일 재업로드 가능하도록 초기화
+}
+    </script>
+    <style>
+        .novel-content {
+            line-height: 1.8 !important;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .view-section {
+            transition: opacity 0.15s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-stone-50 text-stone-800 font-sans min-h-screen flex flex-col antialiased selection:bg-brand-100 selection:text-brand-900">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-white border-b border-stone-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3 cursor-pointer" onclick="navigateTo('list')">
+                <div class="w-10 h-10 rounded-xl bg-brand-600 text-white flex items-center justify-center font-bold text-xl shadow-inner">
+                    📖
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold text-stone-900 leading-tight">소설 백업 아카이브</h1>
+                    <p class="text-xs text-stone-500">Personal Novel Storage & Reader</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-2">
+                <!-- 새 글 작성 시 openNewPostEditor() 호출로 ID 초기화 -->
+                <button onclick="openNewPostEditor()" class="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition flex items-center space-x-1.5 shadow-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    <span>새 글 작성</span>
+                </button>
+                <button onclick="resetToSampleData()" title="샘플 데이터 복원" class="p-2 text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded-lg transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </button>
+				<!-- 상단 헤더 내부 (resetToSampleData 버튼 옆) -->
+<div class="flex items-center space-x-1 border-l border-stone-200 pl-2 ml-1">
+    <!-- JSON 다운로드 (내보내기) 버튼 -->
+    <button onclick="exportToJson()" title="전체 데이터 JSON 다운로드" class="px-2.5 py-1.5 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition flex items-center space-x-1 text-xs font-medium">
+        <svg class="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+        <span>JSON 백업</span>
+    </button>
+
+    <!-- JSON 업로드 (다른 브라우저에서 불러오기) 버튼 -->
+    <label title="JSON 데이터 불러오기" class="px-2.5 py-1.5 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition flex items-center space-x-1 text-xs font-medium cursor-pointer">
+        <svg class="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+        <span>JSON 복원</span>
+        <input type="file" id="json-file-input" accept=".json" onchange="importFromJson(event)" class="hidden">
+    </label>
+</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-grow max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- VIEW 1: Board List -->
+        <section id="view-list" class="view-section space-y-6">
+            <div class="bg-white p-4 rounded-xl border border-stone-200 shadow-sm space-y-4">
+                <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+                    <div class="relative flex-1">
+                        <svg class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <input type="text" id="search-input" oninput="handleSearchChange()" placeholder="제목 또는 본문 내용 검색..." class="w-full pl-10 pr-4 py-2 border border-stone-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <div class="w-40">
+                            <select id="tag-select" onchange="handleTagSelectChange()" class="w-full py-2 px-3 border border-stone-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                                <option value="">모든 태그 전체보기</option>
+                            </select>
+                        </div>
+
+                        <div class="w-36">
+                            <select id="sort-select" onchange="handleSortChange()" class="w-full py-2 px-3 border border-stone-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                                <option value="newest">최신순 정렬</option>
+                                <option value="oldest">등록순 정렬</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tag-pills-container" class="flex flex-wrap items-center gap-1.5 pt-2 border-t border-stone-100 text-xs">
+                    <span class="text-stone-500 font-medium mr-1">태그 필터:</span>
+                </div>
+            </div>
+
+            <!-- Batch Delete Action Bar -->
+            <div id="batch-action-bar" class="hidden bg-red-50 border border-red-200 p-3.5 rounded-xl flex items-center justify-between shadow-sm">
+                <div class="flex items-center space-x-2 text-sm text-red-900 font-medium">
+                    <span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block animate-pulse"></span>
+                    <span id="selected-count-text">0개 선택됨</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button onclick="clearSelection()" class="px-3 py-1.5 text-xs font-medium text-stone-600 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 transition">
+                        선택 해제
+                    </button>
+                    <button onclick="deleteSelectedPosts()" class="px-3 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition shadow-sm flex items-center space-x-1">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        <span>선택 삭제</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Posts List Table -->
+            <div class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-stone-100 border-b border-stone-200 text-xs font-semibold text-stone-600 uppercase tracking-wider">
+                                <th class="py-3 px-3 w-10 text-center">
+                                    <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this.checked)" title="현재 페이지 전체 선택" class="w-4 h-4 text-brand-600 rounded border-stone-300 focus:ring-brand-500 cursor-pointer">
+                                </th>
+                                <th class="py-3 px-4 w-16 text-center">번호</th>
+                                <th class="py-3 px-4">제목</th>
+                                <th class="py-3 px-4 text-center">태그</th>
+                                <th class="py-3 px-4 w-24 text-right">글자수</th>
+                                <th class="py-3 px-4 w-20 text-center">댓글</th>
+                                <th class="py-3 px-4 w-40 text-center">작성일시</th>
+                            </tr>
+                        </thead>
+                        <tbody id="posts-table-body" class="divide-y divide-stone-200 text-sm">
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="empty-state" class="hidden py-16 text-center">
+                    <p class="text-4xl mb-3">📭</p>
+                    <p class="text-stone-600 font-medium text-base">검색 조건에 일치하는 게시글이 없습니다.</p>
+                    <p class="text-stone-400 text-xs mt-1">태그나 검색어를 변경해 보세요.</p>
+                </div>
+            </div>
+
+            <!-- Pagination Bar -->
+            <div id="pagination-container" class="flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-stone-200 shadow-sm">
+                <div class="text-xs text-stone-500">
+                    전체 <span id="total-count-text" class="font-bold text-stone-800">0</span>개 중 
+                    <span id="showing-range-text" class="font-semibold text-stone-700">0-0</span> 표시
+                </div>
+                <div id="pagination-buttons" class="flex items-center space-x-1">
+                </div>
+            </div>
+        </section>
+
+        <!-- VIEW 2: Post Detail Page -->
+        <section id="view-detail" class="view-section hidden space-y-6 max-w-4xl mx-auto">
+            <div class="flex items-center justify-between gap-2 border-b border-stone-200 pb-4">
+                <button onclick="navigateTo('list')" class="inline-flex items-center space-x-1 text-sm font-medium text-stone-600 hover:text-stone-900 bg-white border border-stone-300 px-3 py-1.5 rounded-lg transition hover:bg-stone-50">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                    <span>목록으로</span>
+                </button>
+
+                <div class="flex items-center space-x-2">
+                    <button onclick="downloadCurrentPostTxt()" class="inline-flex items-center space-x-1 text-sm font-medium text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-3 py-1.5 rounded-lg transition shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        <span>.txt 다운로드</span>
+                    </button>
+                    <button onclick="editCurrentPost()" class="inline-flex items-center space-x-1 text-sm font-medium text-stone-700 bg-white hover:bg-stone-50 border border-stone-300 px-3 py-1.5 rounded-lg transition">
+                        <span>수정</span>
+                    </button>
+                    <button onclick="confirmDeleteCurrentPost()" class="inline-flex items-center space-x-1 text-sm font-medium text-red-600 bg-white hover:bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg transition">
+                        <span>삭제</span>
+                    </button>
+                </div>
+            </div>
+
+            <article class="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 md:p-10 space-y-6">
+                <header class="border-b border-stone-100 pb-6 space-y-3">
+                    <div class="flex items-center space-x-2">
+                        <span id="detail-post-id-badge" class="bg-brand-100 text-brand-800 font-bold text-xs px-2.5 py-1 rounded-md">
+                            #000
+                        </span>
+                        <div id="detail-tags-container" class="flex flex-wrap gap-1">
+                        </div>
+                    </div>
+                    
+                    <h2 id="detail-title" class="text-2xl md:text-3xl font-extrabold text-stone-900 leading-tight">
+                    </h2>
+
+                    <div class="text-xs text-[#777] flex flex-wrap items-center gap-y-1 gap-x-4 pt-1 font-mono">
+                        <span id="detail-date">작성일: YYYY-MM-DD HH:mm:ss</span>
+                        <span>•</span>
+                        <span id="detail-char-count">글자수: 0자 (공백 포함)</span>
+                        <span>•</span>
+                        <span id="detail-comment-count">댓글: 0개</span>
+                    </div>
+                </header>
+
+                <div class="flex justify-end items-center space-x-2 text-xs text-stone-500 bg-stone-50 p-2 rounded-lg w-fit ml-auto">
+                    <span>본문 글자 크기:</span>
+                    <button onclick="changeFontSize('text-base')" class="px-2 py-0.5 border rounded hover:bg-white">보통</button>
+                    <button onclick="changeFontSize('text-lg')" class="px-2 py-0.5 border rounded hover:bg-white font-medium">크게</button>
+                    <button onclick="changeFontSize('text-xl')" class="px-2 py-0.5 border rounded hover:bg-white font-bold">더크게</button>
+                </div>
+
+                <div id="detail-content" class="novel-content text-stone-800 text-base font-sans tracking-normal leading-[1.8] min-h-[250px] py-4 px-2">
+                </div>
+            </article>
+
+            <section class="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 md:p-8 space-y-6">
+                <h3 class="text-lg font-bold text-stone-900 flex items-center space-x-2">
+                    <span>💬 댓글</span>
+                    <span id="detail-comment-header-count" class="text-sm font-normal text-stone-500">(0)</span>
+                </h3>
+
+                <div id="comments-list-container" class="space-y-6 pt-2 divide-y divide-stone-100">
+                </div>
+
+                <div class="space-y-3 bg-stone-50 p-4 rounded-xl border border-stone-200">
+                    <textarea id="main-comment-input" rows="20" placeholder="댓글을 입력해 보세요" class="w-full p-3 border border-stone-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y bg-white"></textarea>
+                    <div class="flex justify-end">
+                        <button onclick="submitMainComment()" class="bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition shadow-sm">
+                            댓글 작성
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </section>
+
+        <!-- VIEW 3: Post Creation / Editing Page -->
+        <section id="view-editor" class="view-section hidden space-y-6 max-w-4xl mx-auto">
+            <div class="flex items-center justify-between border-b border-stone-200 pb-4">
+                <h2 id="editor-heading" class="text-xl font-bold text-stone-900">새 소설/게시글 작성</h2>
+                <button onclick="cancelEditor()" class="text-stone-500 hover:text-stone-800 text-sm font-medium">취소</button>
+            </div>
+
+            <div class="bg-amber-50/70 border-2 border-dashed border-amber-300 rounded-xl p-5 text-center space-y-2">
+                <div class="text-2xl">📂</div>
+                <h3 class="text-sm font-bold text-amber-900">.txt 파일로 게시글 자동 작성</h3>
+                <p class="text-xs text-amber-700">보유하신 소설 텍스트(.txt) 파일을 첨부하시면 제목과 본문 내용이 자동으로 채워집니다.</p>
+                <div class="pt-2">
+                    <label class="inline-flex items-center px-4 py-2 bg-white border border-amber-300 rounded-lg text-xs font-semibold text-amber-800 hover:bg-amber-100 cursor-pointer shadow-sm transition">
+                        <span>.txt 파일 선택 및 자동 입력</span>
+                        <input type="file" id="txt-file-input" accept=".txt" onchange="handleFileUpload(event)" class="hidden">
+                    </label>
+                </div>
+            </div>
+
+            <form id="editor-form" onsubmit="handleFormSubmit(event)" class="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 md:p-8 space-y-5">
+                <input type="hidden" id="editor-post-id" value="">
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-stone-600 mb-1">제목 *</label>
+                    <input type="text" id="editor-title" required placeholder="소설 제목 또는 회차 제목을 입력하세요" class="w-full px-4 py-2.5 border border-stone-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-stone-600 mb-1">태그 (쉼표로 구분)</label>
+                    <input type="text" id="editor-tags" placeholder="예: 판타지, 회귀, 1화, 장편" class="w-full px-4 py-2.5 border border-stone-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                    <p class="text-[11px] text-stone-400 mt-1">쉼표(,)로 구분하여 여러 태그를 입력할 수 있습니다.</p>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="block text-xs font-bold uppercase text-stone-600">본문 *</label>
+                        <span id="editor-live-char-count" class="text-xs font-mono text-stone-500">0자 (공백 포함)</span>
+                    </div>
+                    <textarea id="editor-content" required rows="18" oninput="updateLiveCharCount()" placeholder="소설 본문을 입력하거나 위에서 .txt 파일로 가져오세요..." class="w-full p-4 border border-stone-300 rounded-lg text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-brand-500 font-sans resize-y"></textarea>
+                </div>
+
+                <div class="flex justify-end space-x-3 pt-3 border-t border-stone-100">
+                    <button type="button" onclick="cancelEditor()" class="px-5 py-2.5 border border-stone-300 text-stone-700 text-sm rounded-lg hover:bg-stone-50 font-medium transition">
+                        취소
+                    </button>
+                    <button type="submit" class="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm rounded-lg font-medium shadow-sm transition">
+                        게시글 저장
+                    </button>
+                </div>
+            </form>
+        </section>
+
+    </main>
+
+    <!-- Global Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 bg-stone-900 text-white text-sm px-5 py-3 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-all duration-300 transform translate-y-2 z-50 flex items-center space-x-2">
+        <span id="toast-message">메시지</span>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'novel_backup_archive_posts_v1';
+
+        let posts = [];
+        let currentView = 'list';
+        let currentPostId = null;
+        let currentPage = 1;
+        const postsPerPage = 20;
+
+        let selectedPostIds = new Set();
+
+        let searchQuery = '';
+        let selectedTag = '';
+        let sortOrder = 'newest';
+
+        function formatDate(date = new Date()) {
+            const pad = (n) => String(n).padStart(2, '0');
+            const year = date.getFullYear();
+            const month = pad(date.getMonth() + 1);
+            const day = pad(date.getDate());
+            const hours = pad(date.getHours());
+            const minutes = pad(date.getMinutes());
+            const seconds = pad(date.getSeconds());
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        }
+
+        function getCharCount(str) {
+            return str ? str.length : 0;
+        }
+
+        function getInitialSamplePosts() {
+            const samplePosts = [];
+            const sampleTitles = [
+                "샘플 텍스트 - 제1화", "샘플 텍스트 - 제2화", "샘플 텍스트 - 제3화",
+                "샘플 텍스트 - 제4화", "샘플 텍스트 - 제5화", "샘플 텍스트 - 제6화",
+                "샘플 텍스트 - 제7화", "샘플 텍스트 - 제8화", "샘플 텍스트 - 제9화",
+                "샘플 텍스트 - 제10화", "샘플 텍스트 - 제11화", "샘플 텍스트 - 제12화",
+                "샘플 텍스트 - 제13화", "샘플 텍스트 - 제14화", "샘플 텍스트 - 제15화",
+                "샘플 텍스트 - 제16화", "샘플 텍스트 - 제17화", "샘플 텍스트 - 제18화",
+                "샘플 텍스트 - 제19화", "샘플 텍스트 - 제20화", "샘플 텍스트 - 제21화",
+            ];
+
+            const sampleTagsList = [["태그1", "태그2"]];
+            const now = new Date();
+
+            for (let i = 0; i < sampleTitles.length; i++) {
+                const pastDate = new Date(now.getTime() - (sampleTitles.length - i) * 3600000 * 4);
+                const tagGroup = sampleTagsList[i % sampleTagsList.length];
+                
+                samplePosts.push({
+                    id: sampleTitles.length - i,
+                    title: sampleTitles[i],
+                    content: `[제 ${i + 1}화 본문 예시]\n\n본문은 백업용 텍스트 파일(.txt)을 업로드하여 언제든지 자동으로 등록하거나 수정하실 수 있습니다.`,
+                    tags: tagGroup,
+                    createdAt: formatDate(pastDate),
+                    comments: [
+                        {
+                            id: 1000 + i,
+                            content: "첫 번째 댓글입니다.",
+                            createdAt: formatDate(new Date(pastDate.getTime() + 600000)),
+                            replies: [
+                                {
+                                    id: 2000 + i,
+                                    content: "답댓글입니다.",
+                                    createdAt: formatDate(new Date(pastDate.getTime() + 1200000))
+                                }
+                            ]
+                        }
+                    ]
+                });
+            }
+
+            return samplePosts;
+        }
+
+        function loadPosts() {
+            try {
+                const rawData = localStorage.getItem(STORAGE_KEY);
+                if (rawData) {
+                    posts = JSON.parse(rawData);
+                } else {
+                    posts = getInitialSamplePosts();
+                    savePosts();
+                }
+            } catch (e) {
+                console.error("Failed to load local storage", e);
+                posts = getInitialSamplePosts();
+            }
+        }
+
+        function savePosts() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(posts));
+            } catch (e) {
+                alert("로컬 스토리지 저장 용량이 초과되었거나 오류가 발생했습니다.");
+            }
+        }
+
+        function resetToSampleData() {
+            if (confirm("모든 데이터를 초기의 샘플 게시글 데이터로 리셋하시겠습니까?\n(현재 저장된 게시글이 변경됩니다.)")) {
+                posts = getInitialSamplePosts();
+                savePosts();
+                selectedPostIds.clear();
+                currentPage = 1;
+                renderApp();
+                showToast("샘플 데이터로 리셋되었습니다.");
+            }
+        }
+
+        // 새 글 전용 에디터 열기 (ID 초기화)
+        function openNewPostEditor() {
+            currentPostId = null;
+            navigateTo('editor');
+        }
+
+        function navigateTo(viewName, postId = null) {
+            currentView = viewName;
+            if (postId !== null) {
+                currentPostId = postId;
+            }
+
+            document.getElementById('view-list').classList.add('hidden');
+            document.getElementById('view-detail').classList.add('hidden');
+            document.getElementById('view-editor').classList.add('hidden');
+
+            if (viewName === 'list') {
+                document.getElementById('view-list').classList.remove('hidden');
+                renderListView();
+            } else if (viewName === 'detail') {
+                document.getElementById('view-detail').classList.remove('hidden');
+                renderDetailView();
+            } else if (viewName === 'editor') {
+                document.getElementById('view-editor').classList.remove('hidden');
+                renderEditorView();
+            }
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-message').innerText = message;
+            toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+            toast.classList.add('opacity-100', 'translate-y-0');
+
+            setTimeout(() => {
+                toast.classList.remove('opacity-100', 'translate-y-0');
+                toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
+            }, 2500);
+        }
+
+        function toggleSelectPost(id, isChecked) {
+            if (isChecked) {
+                selectedPostIds.add(id);
+            } else {
+                selectedPostIds.delete(id);
+            }
+            updateSelectionUI();
+            updateMasterCheckboxState();
+        }
+
+        function toggleSelectAll(isChecked) {
+            const pagePosts = getCurrentPagePosts();
+            pagePosts.forEach(post => {
+                if (isChecked) {
+                    selectedPostIds.add(post.id);
+                } else {
+                    selectedPostIds.delete(post.id);
+                }
+            });
+            updateSelectionUI();
+            renderListView();
+        }
+
+        function clearSelection() {
+            selectedPostIds.clear();
+            updateSelectionUI();
+            renderListView();
+        }
+
+        function deleteSelectedPosts() {
+            if (selectedPostIds.size === 0) return;
+
+            const count = selectedPostIds.size;
+            if (confirm(`선택한 ${count}개의 게시글을 정말로 삭제하시겠습니까?\n삭제된 글은 복구할 수 없습니다.`)) {
+                posts = posts.filter(p => !selectedPostIds.has(p.id));
+                selectedPostIds.clear();
+                savePosts();
+                showToast(`${count}개의 게시글이 일괄 삭제되었습니다.`);
+                renderListView();
+            }
+        }
+
+        function updateSelectionUI() {
+            const count = selectedPostIds.size;
+            const bar = document.getElementById('batch-action-bar');
+            const countText = document.getElementById('selected-count-text');
+
+            if (count > 0) {
+                bar.classList.remove('hidden');
+                countText.innerText = `${count}개 선택됨`;
+            } else {
+                bar.classList.add('hidden');
+            }
+        }
+
+        function getCurrentPagePosts() {
+            const filteredPosts = getFilteredAndSortedPosts();
+            const totalPosts = filteredPosts.length;
+            const totalPages = Math.ceil(totalPosts / postsPerPage) || 1;
+            const validPage = Math.min(currentPage, totalPages);
+            
+            const startIndex = (validPage - 1) * postsPerPage;
+            const endIndex = Math.min(startIndex + postsPerPage, totalPosts);
+            return filteredPosts.slice(startIndex, endIndex);
+        }
+
+        function updateMasterCheckboxState() {
+            const pagePosts = getCurrentPagePosts();
+            const selectAllCheckbox = document.getElementById('select-all-checkbox');
+            if (!selectAllCheckbox) return;
+
+            if (pagePosts.length > 0 && pagePosts.every(p => selectedPostIds.has(p.id))) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else if (pagePosts.some(p => selectedPostIds.has(p.id))) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            }
+        }
+
+        function getFilteredAndSortedPosts() {
+            let result = [...posts];
+
+            if (searchQuery.trim() !== '') {
+                const q = searchQuery.toLowerCase();
+                result = result.filter(p => p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q));
+            }
+
+            if (selectedTag) {
+                result = result.filter(p => p.tags && p.tags.includes(selectedTag));
+            }
+
+            result.sort((a, b) => {
+                if (sortOrder === 'newest') {
+                    return new Date(b.createdAt) - new Date(a.createdAt);
+                } else {
+                    return new Date(a.createdAt) - new Date(b.createdAt);
+                }
+            });
+
+            return result;
+        }
+
+        function renderListView() {
+            populateTagOptions();
+
+            const filteredPosts = getFilteredAndSortedPosts();
+            const totalPosts = filteredPosts.length;
+            const totalPages = Math.ceil(totalPosts / postsPerPage) || 1;
+
+            if (currentPage > totalPages) currentPage = totalPages;
+
+            const startIndex = (currentPage - 1) * postsPerPage;
+            const endIndex = Math.min(startIndex + postsPerPage, totalPosts);
+            const pagePosts = filteredPosts.slice(startIndex, endIndex);
+
+            const tbody = document.getElementById('posts-table-body');
+            tbody.innerHTML = '';
+
+            if (pagePosts.length === 0) {
+                document.getElementById('empty-state').classList.remove('hidden');
+            } else {
+                document.getElementById('empty-state').classList.add('hidden');
+
+                pagePosts.forEach((post) => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'hover:bg-stone-50/80 cursor-pointer transition-colors';
+                    tr.onclick = () => navigateTo('detail', post.id);
+
+                    let commentCount = post.comments ? post.comments.length : 0;
+                    if (post.comments) {
+                        post.comments.forEach(c => {
+                            if (c.replies) commentCount += c.replies.length;
+                        });
+                    }
+
+                    const tagsHtml = (post.tags && post.tags.length > 0) 
+                        ? post.tags.map(t => `<span class="inline-block bg-stone-100 text-stone-600 px-2 py-0.5 rounded text-[11px] font-medium mr-1">#${t}</span>`).join('')
+                        : '<span class="text-stone-400 text-xs">-</span>';
+
+                    const isChecked = selectedPostIds.has(post.id);
+
+                    tr.innerHTML = `
+                        <td class="py-3.5 px-3 text-center" onclick="event.stopPropagation()">
+                            <input type="checkbox" class="w-4 h-4 text-brand-600 rounded border-stone-300 focus:ring-brand-500 cursor-pointer" 
+                                   value="${post.id}" ${isChecked ? 'checked' : ''} 
+                                   onchange="toggleSelectPost(${post.id}, this.checked)">
+                        </td>
+                        <td class="py-3.5 px-4 text-center font-mono text-xs text-stone-400">#${post.id}</td>
+                        <td class="py-3.5 px-4 font-medium text-stone-900 hover:text-brand-600">
+                            ${escapeHtml(post.title)}
+                        </td>
+                        <td class="py-3.5 px-4 text-center">
+                            <div class="flex flex-wrap justify-center gap-1">${tagsHtml}</div>
+                        </td>
+                        <td class="py-3.5 px-4 text-right font-mono text-xs text-stone-500">
+                            ${getCharCount(post.content).toLocaleString()}자
+                        </td>
+                        <td class="py-3.5 px-4 text-center">
+                            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full ${commentCount > 0 ? 'bg-amber-100 text-amber-800' : 'text-stone-400'}">
+                                💬 ${commentCount}
+                            </span>
+                        </td>
+                        <td class="py-3.5 px-4 text-center font-mono text-xs text-stone-500">
+                            ${post.createdAt}
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            document.getElementById('total-count-text').innerText = totalPosts;
+            document.getElementById('showing-range-text').innerText = totalPosts > 0 ? `${startIndex + 1}-${endIndex}` : '0-0';
+
+            updateSelectionUI();
+            updateMasterCheckboxState();
+            renderPaginationButtons(totalPages);
+        }
+
+        function renderPaginationButtons(totalPages) {
+            const container = document.getElementById('pagination-buttons');
+            container.innerHTML = '';
+
+            if (totalPages <= 1) return;
+
+            const prevBtn = document.createElement('button');
+            prevBtn.className = `px-3 py-1.5 text-xs font-medium rounded-lg border border-stone-300 ${currentPage === 1 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-stone-100'}`;
+            prevBtn.innerText = '이전';
+            prevBtn.disabled = currentPage === 1;
+            prevBtn.onclick = () => { if (currentPage > 1) { currentPage--; renderListView(); } };
+            container.appendChild(prevBtn);
+
+            for (let i = 1; i <= totalPages; i++) {
+                const pageBtn = document.createElement('button');
+                const isActive = i === currentPage;
+                pageBtn.className = `px-3 py-1.5 text-xs font-bold rounded-lg ${isActive ? 'bg-brand-600 text-white' : 'border border-stone-300 hover:bg-stone-100 text-stone-700'}`;
+                pageBtn.innerText = i;
+                pageBtn.onclick = () => { currentPage = i; renderListView(); };
+                container.appendChild(pageBtn);
+            }
+
+            const nextBtn = document.createElement('button');
+            nextBtn.className = `px-3 py-1.5 text-xs font-medium rounded-lg border border-stone-300 ${currentPage === totalPages ? 'opacity-40 cursor-not-allowed' : 'hover:bg-stone-100'}`;
+            nextBtn.innerText = '다음';
+            nextBtn.disabled = currentPage === totalPages;
+            nextBtn.onclick = () => { if (currentPage < totalPages) { currentPage++; renderListView(); } };
+            container.appendChild(nextBtn);
+        }
+
+        function populateTagOptions() {
+            const tagSet = new Set();
+            posts.forEach(p => {
+                if (p.tags && Array.isArray(p.tags)) {
+                    p.tags.forEach(t => tagSet.add(t));
+                }
+            });
+
+            const tagSelect = document.getElementById('tag-select');
+            const currentSelected = selectedTag;
+            tagSelect.innerHTML = '<option value="">모든 태그 전체보기</option>';
+
+            const pillsContainer = document.getElementById('tag-pills-container');
+            pillsContainer.innerHTML = '<span class="text-stone-500 font-medium mr-1">태그 필터:</span>';
+
+            const allPill = document.createElement('button');
+            allPill.className = `px-2 py-0.5 rounded-md font-medium text-xs transition ${selectedTag === '' ? 'bg-brand-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`;
+            allPill.innerText = '전체';
+            allPill.onclick = () => { selectedTag = ''; document.getElementById('tag-select').value = ''; currentPage = 1; renderListView(); };
+            pillsContainer.appendChild(allPill);
+
+            tagSet.forEach(tag => {
+                const opt = document.createElement('option');
+                opt.value = tag;
+                opt.innerText = `#${tag}`;
+                if (tag === currentSelected) opt.selected = true;
+                tagSelect.appendChild(opt);
+
+                const pill = document.createElement('button');
+                pill.className = `px-2 py-0.5 rounded-md font-medium text-xs transition ${selectedTag === tag ? 'bg-brand-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`;
+                pill.innerText = `#${tag}`;
+                pill.onclick = () => {
+                    selectedTag = tag;
+                    document.getElementById('tag-select').value = tag;
+                    currentPage = 1;
+                    renderListView();
+                };
+                pillsContainer.appendChild(pill);
+            });
+        }
+
+        function handleSearchChange() {
+            searchQuery = document.getElementById('search-input').value;
+            currentPage = 1;
+            renderListView();
+        }
+
+        function handleTagSelectChange() {
+            selectedTag = document.getElementById('tag-select').value;
+            currentPage = 1;
+            renderListView();
+        }
+
+        function handleSortChange() {
+            sortOrder = document.getElementById('sort-select').value;
+            renderListView();
+        }
+
+        function renderDetailView() {
+            const post = posts.find(p => p.id === currentPostId);
+            if (!post) {
+                alert("존재하지 않는 게시글입니다.");
+                navigateTo('list');
+                return;
+            }
+
+            document.getElementById('detail-post-id-badge').innerText = `#${post.id}`;
+            document.getElementById('detail-title').innerText = post.title;
+            document.getElementById('detail-date').innerText = `작성일: ${post.createdAt}`;
+            document.getElementById('detail-char-count').innerText = `글자수: ${getCharCount(post.content).toLocaleString()}자 (공백 포함)`;
+
+            let totalComments = post.comments ? post.comments.length : 0;
+            if (post.comments) {
+                post.comments.forEach(c => { if (c.replies) totalComments += c.replies.length; });
+            }
+            document.getElementById('detail-comment-count').innerText = `댓글: ${totalComments}개`;
+            document.getElementById('detail-comment-header-count').innerText = `(${totalComments})`;
+
+            const tagsContainer = document.getElementById('detail-tags-container');
+            tagsContainer.innerHTML = '';
+            if (post.tags && post.tags.length > 0) {
+                post.tags.forEach(t => {
+                    const tagSpan = document.createElement('span');
+                    tagSpan.className = 'bg-stone-100 text-stone-700 font-medium px-2 py-0.5 rounded text-xs';
+                    tagSpan.innerText = `#${t}`;
+                    tagsContainer.appendChild(tagSpan);
+                });
+            }
+
+            document.getElementById('detail-content').innerText = post.content;
+            renderComments(post);
+        }
+
+        function changeFontSize(sizeClass) {
+            const contentEl = document.getElementById('detail-content');
+            contentEl.classList.remove('text-sm', 'text-base', 'text-lg', 'text-xl');
+            contentEl.classList.add(sizeClass);
+        }
+
+        function renderComments(post) {
+            const container = document.getElementById('comments-list-container');
+            container.innerHTML = '';
+
+            if (!post.comments || post.comments.length === 0) {
+                container.innerHTML = `<div class="py-6 text-center text-stone-400 text-sm">등록된 댓글이 없습니다. 첫 번째 댓글을 남겨보세요!</div>`;
+                return;
+            }
+
+            post.comments.forEach(comment => {
+                const commentEl = document.createElement('div');
+                commentEl.className = 'pt-4 first:pt-0 space-y-3';
+
+                commentEl.innerHTML = `
+                    <div class="flex items-start justify-between">
+                        <div class="space-y-1">
+                            <div class="flex items-center space-x-2">
+                                <span class="font-bold text-s text-stone-800">▷ 익명</span>
+                                <span class="text-xs text-stone-400 font-mono">${comment.createdAt}</span>
+                            </div>
+                            <div class="text-sm text-stone-800 novel-content whitespace-pre-line leading-relaxed">${escapeHtml(comment.content)}</div>
+							<div align="right">
+								<button onclick="toggleReplyBox(${comment.id})" class="text-s font-medium text-brand-600 hover:text-brand-800 bg-brand-50 px-2.5 py-1 rounded-md transition">
+									답글 달기
+								</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="reply-box-${comment.id}" class="hidden pl-6 pt-2 space-y-2">
+                        <textarea id="reply-input-${comment.id}" rows="20" placeholder="답댓글을 작성하세요." class="w-full p-2.5 border border-stone-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"></textarea>
+                        <div class="flex justify-end space-x-2">
+                            <button onclick="toggleReplyBox(${comment.id})" class="px-3 py-1 border border-stone-300 rounded-md text-xs text-stone-600">취소</button>
+                            <button onclick="submitReply(${comment.id})" class="px-3 py-1 bg-brand-600 text-white rounded-md text-xs font-medium">답댓글 등록</button>
+                        </div>
+                    </div>
+
+                    <div class="pl-6 space-y-2.5 border-l-2 border-stone-100 mt-2">
+                        ${(comment.replies || []).map(reply => `
+                            <div class="bg-stone-50 p-3 rounded-lg space-y-1">
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-xs text-stone-400">↳</span>
+                                    <span class="font-bold text-xs text-stone-700">▷ 익익명</span>
+                                    <span class="text-xs text-stone-400 font-mono">${reply.createdAt}</span>
+                                </div>
+                                <div class="text-sm text-stone-800 pl-4 whitespace-pre-line leading-relaxed">${escapeHtml(reply.content)}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+
+                container.appendChild(commentEl);
+            });
+        }
+
+        function toggleReplyBox(commentId) {
+            const box = document.getElementById(`reply-box-${commentId}`);
+            if (box) {
+                box.classList.toggle('hidden');
+            }
+        }
+
+        function submitMainComment() {
+            const input = document.getElementById('main-comment-input');
+            const content = input.value.trim();
+            if (!content) {
+                alert('댓글 내용을 입력해 주세요.');
+                return;
+            }
+
+            const post = posts.find(p => p.id === currentPostId);
+            if (!post) return;
+
+            if (!post.comments) post.comments = [];
+
+            const newComment = {
+                id: Date.now(),
+                content: content,
+                createdAt: formatDate(),
+                replies: []
+            };
+
+            post.comments.push(newComment);
+            savePosts();
+
+            input.value = '';
+            renderDetailView();
+            showToast('댓글이 등록되었습니다.');
+        }
+
+        function submitReply(commentId) {
+            const input = document.getElementById(`reply-input-${commentId}`);
+            const content = input.value.trim();
+            if (!content) {
+                alert('답댓글 내용을 입력해 주세요.');
+                return;
+            }
+
+            const post = posts.find(p => p.id === currentPostId);
+            if (!post) return;
+
+            const parentComment = post.comments.find(c => c.id === commentId);
+            if (!parentComment) return;
+
+            if (!parentComment.replies) parentComment.replies = [];
+
+            parentComment.replies.push({
+                id: Date.now(),
+                content: content,
+                createdAt: formatDate()
+            });
+
+            savePosts();
+            renderDetailView();
+            showToast('답댓글이 등록되었습니다.');
+        }
+
+        function downloadCurrentPostTxt() {
+            const post = posts.find(p => p.id === currentPostId);
+            if (!post) return;
+
+            const textContent = `제목: ${post.title}\n작성일: ${post.createdAt}\n태그: ${(post.tags || []).join(', ')}\n글자수: ${getCharCount(post.content)}자\n\n----------------------------------------\n\n${post.content}`;
+
+            const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            
+            const cleanTitle = post.title.replace(/[/\\?%*:|"<>]/g, '_');
+            a.download = `${cleanTitle}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showToast('.txt 파일 다운로드가 시작되었습니다.');
+        }
+
+        function confirmDeleteCurrentPost() {
+            if (confirm("정말로 이 게시글을 삭제하시겠습니까? 삭제된 글은 복구할 수 없습니다.")) {
+                posts = posts.filter(p => p.id !== currentPostId);
+                selectedPostIds.delete(currentPostId);
+                savePosts();
+                showToast("게시글이 삭제되었습니다.");
+                navigateTo('list');
+            }
+        }
+
+        function renderEditorView() {
+            const postIdInput = document.getElementById('editor-post-id');
+            const heading = document.getElementById('editor-heading');
+            const titleInput = document.getElementById('editor-title');
+            const tagsInput = document.getElementById('editor-tags');
+            const contentInput = document.getElementById('editor-content');
+            const fileInput = document.getElementById('txt-file-input');
+
+            fileInput.value = '';
+
+            if (currentPostId) {
+                // 수정 모드
+                const post = posts.find(p => p.id === currentPostId);
+                if (post) {
+                    heading.innerText = "게시글 수정";
+                    postIdInput.value = post.id;
+                    titleInput.value = post.title;
+                    tagsInput.value = (post.tags || []).join(', ');
+                    contentInput.value = post.content;
+                }
+            } else {
+                // 새 글 작성 모드
+                heading.innerText = "새 소설/게시글 작성";
+                postIdInput.value = "";
+                titleInput.value = "";
+                tagsInput.value = "";
+                contentInput.value = "";
+            }
+
+            updateLiveCharCount();
+        }
+
+        function updateLiveCharCount() {
+            const content = document.getElementById('editor-content').value;
+            document.getElementById('editor-live-char-count').innerText = `${getCharCount(content).toLocaleString()}자 (공백 포함)`;
+        }
+
+        function editCurrentPost() {
+            navigateTo('editor', currentPostId);
+        }
+
+        function cancelEditor() {
+            if (currentPostId) {
+                navigateTo('detail', currentPostId);
+            } else {
+                navigateTo('list');
+            }
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!file.name.endsWith('.txt')) {
+                alert('.txt 확장자의 텍스트 파일만 첨부할 수 있습니다.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const textContent = e.target.result;
+                const fileNameWithoutExt = file.name.replace(/\.txt$/i, '');
+                document.getElementById('editor-title').value = fileNameWithoutExt;
+                document.getElementById('editor-content').value = textContent;
+
+                updateLiveCharCount();
+                showToast(`.txt 파일 내용이 입력란에 자동 적용되었습니다.`);
+            };
+
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        function handleFormSubmit(event) {
+            event.preventDefault();
+
+            const editingId = document.getElementById('editor-post-id').value;
+            const title = document.getElementById('editor-title').value.trim();
+            const tagsRaw = document.getElementById('editor-tags').value.trim();
+            const content = document.getElementById('editor-content').value;
+
+            if (!title || !content) {
+                alert("제목과 본문을 모두 입력해 주세요.");
+                return;
+            }
+
+            const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
+
+            if (editingId) {
+                // 기존 게시글 수정
+                const post = posts.find(p => p.id === parseInt(editingId, 10));
+                if (post) {
+                    post.title = title;
+                    post.tags = tags;
+                    post.content = content;
+                    savePosts();
+                    showToast("게시글이 수정되었습니다.");
+                    navigateTo('detail', post.id);
+                }
+            } else {
+                // 새 게시글 추가
+                const newId = posts.length > 0 ? Math.max(...posts.map(p => p.id)) + 1 : 1;
+                const newPost = {
+                    id: newId,
+                    title: title,
+                    content: content,
+                    tags: tags,
+                    createdAt: formatDate(),
+                    comments: []
+                };
+
+                posts.unshift(newPost);
+                savePosts();
+                showToast("새 게시글이 성공적으로 등록되었습니다.");
+                currentPostId = newPost.id;
+                navigateTo('detail', newPost.id);
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function renderApp() {
+            loadPosts();
+            navigateTo('list');
+        }
+
+        window.onload = function() {
+            renderApp();
+        };
+    </script>
+</body>
+</html>
