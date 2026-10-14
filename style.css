@@ -1,0 +1,43 @@
+/* Google Fonts Import */
+@import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&family=Nanum+Myeongjo:wght@400;700;800&family=RIDIBatang&display=swap');
+
+/* Font Family Classes */
+.font-nanum-gothic {
+    font-family: 'Nanum Gothic', sans-serif !important;
+}
+
+.font-malgun {
+    font-family: 'Malgun Gothic', '맑은 고딕', sans-serif !important;
+}
+
+.font-nanum-myeongjo {
+    font-family: 'Nanum Myeongjo', serif !important;
+}
+
+.font-ridi {
+    font-family: 'RIDIBatang', serif !important;
+}
+
+.novel-content {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* 하이라이트 강조 효과 스타일 */
+.keyword-highlight {
+    background-color: #fef08a; /* 노란색 계열 */
+    color: #1c1917;
+    padding: 0.1em 0.2em;
+    border-radius: 0.2rem;
+    font-weight: 600;
+}
+
+/* 다크모드 하이라이트 효과 */
+.dark .keyword-highlight {
+    background-color: #854d0e;
+    color: #fef9c3;
+}
+
+.view-section {
+    transition: opacity 0.15s ease-in-out;
+}
