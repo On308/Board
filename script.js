@@ -1,10 +1,13 @@
-const STORAGE_KEY = 'novel_backup_archive_posts';
+const DB_NAME = 'novel_archive_db';
+const STORE_NAME = 'posts_store';
+const DB_VERSION = 1;
 
+let db = null;
 let posts = [];
 let currentView = 'list';
 let currentPostId = null;
 let currentPage = 1;
-const postsPerPage = 20;
+const postsPerPage = 16;
 
 let selectedPostIds = new Set();
 
@@ -15,6 +18,102 @@ let currentFontClass = 'font-nanum-gothic';
 let currentLineHeightClass = 'leading-[2.0]';
 let currentPaddingClass = 'px-6 md:px-12';
 let currentHighlightKeyword = '';
+
+// IndexedDB 초기화 및 연결 함수
+function initDB() {
+    return new Promise((resolve, reject) => {
+        if (db) {
+            resolve(db);
+            return;
+        }
+
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+        request.onerror = (event) => {
+            console.error("IndexedDB 열기 실패:", event.target.error);
+            reject(event.target.error);
+        };
+
+        request.onsuccess = (event) => {
+            db = event.target.result;
+            resolve(db);
+        };
+
+        request.onupgradeneeded = (event) => {
+            const database = event.target.result;
+            if (!database.objectStoreNames.contains(STORE_NAME)) {
+                database.createObjectStore(STORE_NAME);
+            }
+        };
+    });
+}
+
+// IndexedDB에서 데이터 불러오기
+async function loadPostsFromDB() {
+    try {
+        const database = await initDB();
+        return new Promise((resolve, reject) => {
+            const transaction = database.transaction(STORE_NAME, 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.get('novel_posts_data');
+
+            request.onsuccess = (event) => {
+                resolve(event.target.result);
+            };
+
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    } catch (e) {
+        console.error("DB 로드 오류", e);
+        return null;
+    }
+}
+
+// IndexedDB에 데이터 저장하기
+async function savePostsToDB(data) {
+    try {
+        const database = await initDB();
+        return new Promise((resolve, reject) => {
+            const transaction = database.transaction(STORE_NAME, 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.put(data, 'novel_posts_data');
+
+            request.onsuccess = () => {
+                resolve(true);
+            };
+
+            request.onerror = (event) => {
+                console.error("DB 저장 오류:", event.target.error);
+                alert("대용량 데이터 저장 중 오류가 발생했습니다.");
+                reject(event.target.error);
+            };
+        });
+    } catch (e) {
+        console.error("DB 트랜잭션 오류", e);
+    }
+}
+
+async function loadPosts() {
+    try {
+        const savedData = await loadPostsFromDB();
+        if (savedData && Array.isArray(savedData)) {
+            posts = savedData;
+        } else {
+            posts = getInitialSamplePosts();
+            await savePostsToDB(posts);
+        }
+    } catch (e) {
+        console.error("Failed to load DB", e);
+        posts = getInitialSamplePosts();
+    }
+    renderApp();
+}
+
+async function savePosts() {
+    await savePostsToDB(posts);
+}
 
 function initDarkMode() {
     const isDark = localStorage.getItem('novel_archive_dark') === 'true';
@@ -87,11 +186,13 @@ function getInitialSamplePosts() {
             comments: [
                 {
                     id: 1000 + i,
+                    authorId: getRandomAuthorId('R'),
                     content: "첫 번째 댓글.",
                     createdAt: formatDate(new Date(pastDate.getTime() + 600000)),
                     replies: [
                         {
                             id: 2000 + i,
+                            authorId: getRandomAuthorId('RR'),
                             content: "답댓글.",
                             createdAt: formatDate(new Date(pastDate.getTime() + 1200000))
                         }
@@ -104,33 +205,10 @@ function getInitialSamplePosts() {
     return samplePosts;
 }
 
-function loadPosts() {
-    try {
-        const rawData = localStorage.getItem(STORAGE_KEY);
-        if (rawData) {
-            posts = JSON.parse(rawData);
-        } else {
-            posts = getInitialSamplePosts();
-            savePosts();
-        }
-    } catch (e) {
-        console.error("Failed to load local storage", e);
-        posts = getInitialSamplePosts();
-    }
-}
-
-function savePosts() {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(posts));
-    } catch (e) {
-        alert("로컬 스토리지 저장 용량이 초과되었거나 오류가 발생했습니다.");
-    }
-}
-
-function resetToSampleData() {
+async function resetToSampleData() {
     if (confirm("모든 데이터를 초기의 샘플 게시글 데이터로 리셋하시겠습니까?\n(현재 저장된 게시글이 변경됩니다.)")) {
         posts = getInitialSamplePosts();
-        savePosts();
+        await savePostsToDB(posts);
         selectedPostIds.clear();
         currentPage = 1;
         renderApp();
@@ -237,7 +315,7 @@ function importFromJson(event) {
     }
 
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         try {
             const importedData = JSON.parse(e.target.result);
 
@@ -248,7 +326,7 @@ function importFromJson(event) {
 
             if (confirm("기존 저장된 데이터를 덮어쓰고 가져온 JSON 데이터로 복원하시겠습니까?")) {
                 posts = importedData;
-                savePosts();
+                await savePostsToDB(posts);
                 selectedPostIds.clear();
                 currentPage = 1;
                 renderListView();
@@ -292,14 +370,14 @@ function clearSelection() {
     renderListView();
 }
 
-function deleteSelectedPosts() {
+async function deleteSelectedPosts() {
     if (selectedPostIds.size === 0) return;
 
     const count = selectedPostIds.size;
     if (confirm(`선택한 ${count}개의 게시글을 정말로 삭제하시겠습니까?\n삭제된 글은 복구할 수 없습니다.`)) {
         posts = posts.filter(p => !selectedPostIds.has(p.id));
         selectedPostIds.clear();
-        savePosts();
+        await savePosts();
         showToast(`${count}개의 게시글이 일괄 삭제되었습니다.`);
         renderListView();
     }
@@ -318,8 +396,7 @@ function updateSelectionUI() {
     }
 }
 
-// 선택한 게시글에 태그 일괄 추가
-function promptBatchAddTag() {
+async function promptBatchAddTag() {
     if (selectedPostIds.size === 0) return;
 
     const tagInput = prompt("추가할 태그를 입력해 주세요 (여러 개일 경우 쉼표로 구분):");
@@ -344,16 +421,15 @@ function promptBatchAddTag() {
     });
 
     if (modifiedCount > 0) {
-        savePosts();
+        await savePosts();
         renderListView();
-        showToast(`선택한 게시글 중 ${modifiedCount개}에 태그가 추가되었습니다.`);
+        showToast(`선택한 게시글 중 ${modifiedCount}개에 태그가 추가되었습니다.`);
     } else {
         showToast("이미 모든 선택된 게시글에 해당 태그가 존재합니다.");
     }
 }
 
-// 선택한 게시글에서 특정 태그 일괄 삭제
-function promptBatchRemoveTag() {
+async function promptBatchRemoveTag() {
     if (selectedPostIds.size === 0) return;
 
     const tagInput = prompt("삭제할 태그 이름을 입력해 주세요:");
@@ -370,7 +446,7 @@ function promptBatchRemoveTag() {
     });
 
     if (modifiedCount > 0) {
-        savePosts();
+        await savePosts();
         renderListView();
         showToast(`선택한 게시글 중 ${modifiedCount}개에서 '#${targetTag}' 태그가 삭제되었습니다.`);
     } else {
@@ -775,7 +851,6 @@ function renderComments(post) {
     }
 
     post.comments.forEach(comment => {
-        // 기존 데이터에 authorId가 없으면 즉시 생성
         if (!comment.authorId) comment.authorId = getRandomAuthorId('R');
 
         const commentEl = document.createElement('div');
@@ -803,7 +878,6 @@ function renderComments(post) {
                 </div>
             </div>
 
-            <!-- 댓글 수정 폼 -->
             <div id="edit-comment-box-${comment.id}" class="hidden pt-2 space-y-2">
                 <textarea id="edit-comment-input-${comment.id}" rows="15" class="w-full p-2.5 border border-stone-300 dark:border-stone-600 rounded-lg text-sm bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-brand-500">${escapeHtml(comment.content)}</textarea>
                 <div class="flex justify-end space-x-2">
@@ -812,7 +886,6 @@ function renderComments(post) {
                 </div>
             </div>
 
-            <!-- 답댓글 입력 폼 -->
             <div id="reply-box-${comment.id}" class="hidden pl-6 pt-2 space-y-2">
                 <textarea id="reply-input-${comment.id}" rows="15" placeholder="답댓글을 작성하세요." class="w-full p-2.5 border border-stone-300 dark:border-stone-600 rounded-lg text-sm bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
                 <div class="flex justify-end space-x-2">
@@ -821,7 +894,6 @@ function renderComments(post) {
                 </div>
             </div>
 
-            <!-- 답댓글 목록 -->
             <div class="pl-6 space-y-2.5 border-l-2 border-stone-100 dark:border-stone-700 mt-2">
                 ${(comment.replies || []).map(reply => {
                     if (!reply.authorId) reply.authorId = getRandomAuthorId('RR');
@@ -841,7 +913,6 @@ function renderComments(post) {
                         </div>
                         <div class="text-sm text-stone-800 dark:text-stone-200 pl-4 whitespace-pre-line leading-relaxed">${escapeHtml(reply.content)}</div>
                         
-                        <!-- 답댓글 수정 폼 -->
                         <div id="edit-reply-box-${reply.id}" class="hidden pt-2 space-y-2">
                             <textarea id="edit-reply-input-${reply.id}" rows="15" class="w-full p-2 border border-stone-300 dark:border-stone-600 rounded-lg text-xs bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-brand-500">${escapeHtml(reply.content)}</textarea>
                             <div class="flex justify-end space-x-2">
@@ -873,7 +944,6 @@ function toggleEditReplyBox(replyId) {
     if (box) box.classList.toggle('hidden');
 }
 
-// 0~9 사이의 랜덤 숫자로 6자리 난수 번호 생성 함수
 function getRandomAuthorId(prefix) {
     let randomNum = '';
     for (let i = 0; i < 6; i++) {
@@ -882,7 +952,7 @@ function getRandomAuthorId(prefix) {
     return `${prefix}-${randomNum}`;
 }
 
-function submitMainComment() {
+async function submitMainComment() {
     const input = document.getElementById('main-comment-input');
     const content = input.value.trim();
     if (!content) {
@@ -897,21 +967,21 @@ function submitMainComment() {
 
     const newComment = {
         id: Date.now(),
-        authorId: getRandomAuthorId('R'), // 댓글 난수 번호 (예: R-255670)
+        authorId: getRandomAuthorId('R'),
         content: content,
         createdAt: formatDate(),
         replies: []
     };
 
     post.comments.push(newComment);
-    savePosts();
+    await savePosts();
 
     input.value = '';
     renderDetailView();
     showToast('댓글이 등록되었습니다.');
 }
 
-function submitReply(commentId) {
+async function submitReply(commentId) {
     const input = document.getElementById(`reply-input-${commentId}`);
     const content = input.value.trim();
     if (!content) {
@@ -929,17 +999,17 @@ function submitReply(commentId) {
 
     parentComment.replies.push({
         id: Date.now(),
-        authorId: getRandomAuthorId('RR'), // 답댓글 난수 번호 (예: RR-023597)
+        authorId: getRandomAuthorId('RR'),
         content: content,
         createdAt: formatDate()
     });
 
-    savePosts();
+    await savePosts();
     renderDetailView();
     showToast('답댓글이 등록되었습니다.');
 }
 
-function submitEditComment(commentId) {
+async function submitEditComment(commentId) {
     const input = document.getElementById(`edit-comment-input-${commentId}`);
     const content = input.value.trim();
     if (!content) {
@@ -953,25 +1023,25 @@ function submitEditComment(commentId) {
     const comment = post.comments.find(c => c.id === commentId);
     if (comment) {
         comment.content = content;
-        savePosts();
+        await savePosts();
         renderDetailView();
         showToast('댓글이 수정되었습니다.');
     }
 }
 
-function deleteComment(commentId) {
+async function deleteComment(commentId) {
     if (!confirm('이 댓글을 삭제하시겠습니까?')) return;
 
     const post = posts.find(p => p.id === currentPostId);
     if (!post) return;
 
     post.comments = post.comments.filter(c => c.id !== commentId);
-    savePosts();
+    await savePosts();
     renderDetailView();
     showToast('댓글이 삭제되었습니다.');
 }
 
-function submitEditReply(commentId, replyId) {
+async function submitEditReply(commentId, replyId) {
     const input = document.getElementById(`edit-reply-input-${replyId}`);
     const content = input.value.trim();
     if (!content) {
@@ -987,14 +1057,14 @@ function submitEditReply(commentId, replyId) {
         const reply = comment.replies.find(r => r.id === replyId);
         if (reply) {
             reply.content = content;
-            savePosts();
+            await savePosts();
             renderDetailView();
             showToast('답댓글이 수정되었습니다.');
         }
     }
 }
 
-function deleteReply(commentId, replyId) {
+async function deleteReply(commentId, replyId) {
     if (!confirm('이 답댓글을 삭제하시겠습니까?')) return;
 
     const post = posts.find(p => p.id === currentPostId);
@@ -1003,7 +1073,7 @@ function deleteReply(commentId, replyId) {
     const comment = post.comments.find(c => c.id === commentId);
     if (comment && comment.replies) {
         comment.replies = comment.replies.filter(r => r.id !== replyId);
-        savePosts();
+        await savePosts();
         renderDetailView();
         showToast('답댓글이 삭제되었습니다.');
     }
@@ -1031,11 +1101,11 @@ function downloadCurrentPostTxt() {
     showToast('.txt 파일 다운로드가 시작되었습니다.');
 }
 
-function confirmDeleteCurrentPost() {
+async function confirmDeleteCurrentPost() {
     if (confirm("정말로 이 게시글을 삭제하시겠습니까? 삭제된 글은 복구할 수 없습니다.")) {
         posts = posts.filter(p => p.id !== currentPostId);
         selectedPostIds.delete(currentPostId);
-        savePosts();
+        await savePosts();
         showToast("게시글이 삭제되었습니다.");
         navigateTo('list');
     }
@@ -1113,7 +1183,7 @@ function handleFileUpload(event) {
     reader.readAsText(file, 'UTF-8');
 }
 
-function handleFormSubmit(event) {
+async function handleFormSubmit(event) {
     event.preventDefault();
 
     const editingId = document.getElementById('editor-post-id').value;
@@ -1135,7 +1205,7 @@ function handleFormSubmit(event) {
             post.tags = tags;
             post.content = content;
             post.updatedAt = formatDate();
-            savePosts();
+            await savePosts();
             showToast("게시글이 수정되었습니다.");
             navigateTo('detail', post.id);
         }
@@ -1152,7 +1222,7 @@ function handleFormSubmit(event) {
         };
 
         posts.unshift(newPost);
-        savePosts();
+        await savePosts();
         showToast("새 게시글이 성공적으로 등록되었습니다.");
         currentPostId = newPost.id;
         navigateTo('detail', newPost.id);
@@ -1162,9 +1232,11 @@ function handleFormSubmit(event) {
 function renderApp() {
     initDarkMode();
     loadPosts();
-    navigateTo('list');
 }
 
 window.onload = function() {
-    renderApp();
+    initDarkMode();
+    loadPosts().then(() => {
+        navigateTo('list');
+    });
 };
