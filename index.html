@@ -8,29 +8,94 @@
     <link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&family=Nanum+Myeongjo:wght@400;700;800&family=RIDIBatang&display=swap" rel="stylesheet">
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        brand: {
-                            50: '#fdf8f6',
-                            100: '#f2e8e5',
-                            200: '#e8d5ce',
-                            500: '#c2785c',
-                            600: '#ab5e42',
-                            700: '#8e4931',
-                            900: '#432014',
-                        }
+	<script>
+    tailwind.config = {
+        darkMode: 'class',
+        theme: {
+            extend: {
+                colors: {
+                    // 파스텔 코랄 (메인 브랜드)
+                    brand: {
+                        50:  '#fef6f4',
+                        100: '#fde9e3',
+                        200: '#fad4c8',
+                        300: '#f8b195',
+                        400: '#f69c7d',
+                        500: '#f67280',
+                        600: '#e85d75',
+                        700: '#c94a63',
+                        800: '#9d3850',
+                        900: '#5c2030',
                     },
-                    fontFamily: {
-                        sans: ['"Nanum Gothic"', 'sans-serif'],
-                    }
+                    // 파스텔 핑크
+                    blush: {
+                        50:  '#fef5f8',
+                        100: '#fce7ef',
+                        200: '#f8c8dc',
+                        300: '#f4aac7',
+                        400: '#f18cb2',
+                        500: '#ee6e9d',
+                        600: '#d95580',
+                        700: '#b04067',
+                        800: '#85304e',
+                        900: '#4d1c2e',
+                    },
+                    // 파스텔 민트
+                    mint: {
+                        50:  '#f2faf7',
+                        100: '#e3f4ec',
+                        200: '#b8e0d2',
+                        300: '#8fcbb6',
+                        400: '#66b69a',
+                        500: '#3da17e',
+                        600: '#2c8163',
+                        700: '#22634c',
+                        800: '#1a4a39',
+                        900: '#0f2c22',
+                    },
+                    // 파스텔 라벤더
+                    lavender: {
+                        50:  '#f8f5fc',
+                        100: '#f0e9f8',
+                        200: '#e2d4f0',
+                        300: '#cbb4e0',
+                        400: '#b494d0',
+                        500: '#9d74c0',
+                        600: '#845aa5',
+                        700: '#684582',
+                        800: '#4d335f',
+                        900: '#2d1e38',
+                    },
+                    // 파스텔 크림
+                    cream: {
+                        50:  '#fffdf7',
+                        100: '#fff9ed',
+                        200: '#fdf0d5',
+                        300: '#fbe3b3',
+                        400: '#f8d08a',
+                        500: '#f5bd61',
+                    },
+                    // 중립 (스톤 → 웜톤 그레이)
+                    stone: {
+                        50:  '#fdf8f5',
+                        100: '#f5ebe6',
+                        200: '#ead9d0',
+                        300: '#d9c2b6',
+                        400: '#b39a8c',
+                        500: '#8a7161',
+                        600: '#6b5548',
+                        700: '#4e3e34',
+                        800: '#332823',
+                        900: '#1f1815',
+                    },
+                },
+                fontFamily: {
+                    sans: ['"Nanum Gothic"', 'sans-serif'],
                 }
             }
-        };
-    </script>
+        }
+    };
+</script>
     <!-- 커스텀 스타일시트 연결 -->
     <link rel="stylesheet" href="style.css">
 </head>
@@ -84,6 +149,25 @@
 
         <!-- VIEW 1: Board List -->
         <section id="view-list" class="view-section space-y-6">
+		<!-- 통계 대시보드 -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="bg-white dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700 p-4 shadow-sm">
+        <div class="text-xs text-stone-500 dark:text-stone-400">총 회차</div>
+        <div id="stat-posts" class="text-2xl font-bold text-brand-600 dark:text-brand-400 mt-1">0</div>
+    </div>
+    <div class="bg-white dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700 p-4 shadow-sm">
+        <div class="text-xs text-stone-500 dark:text-stone-400">총 글자수</div>
+        <div id="stat-chars" class="text-2xl font-bold text-mint-600 dark:text-mint-400 mt-1">0</div>
+    </div>
+    <div class="bg-white dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700 p-4 shadow-sm">
+        <div class="text-xs text-stone-500 dark:text-stone-400">오늘 작성</div>
+        <div id="stat-today" class="text-2xl font-bold text-lavender-600 dark:text-lavender-400 mt-1">0</div>
+    </div>
+    <div class="bg-white dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700 p-4 shadow-sm">
+        <div class="text-xs text-stone-500 dark:text-stone-400">즐겨찾기</div>
+        <div id="stat-favs" class="text-2xl font-bold text-blush-500 dark:text-blush-400 mt-1">0</div>
+    </div>
+</div>
             <div class="bg-white dark:bg-stone-800 p-4 rounded-xl border border-stone-200 dark:border-stone-700 shadow-sm space-y-4 transition-colors">
                 <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
                     <div class="relative flex-1">
@@ -103,6 +187,7 @@
                                 <option value="newest">최신순 정렬</option>
                                 <option value="oldest">등록순 정렬</option>
                                 <option value="title">제목순 정렬</option>
+								<option value="episode">회차순 정렬</option>
                                 <option value="updated">업데이트순 정렬</option>
                                 <option value="length">글자수 순 정렬</option>
                                 <option value="comments">댓글순 정렬</option>
@@ -112,12 +197,19 @@
                 </div>
 
                 <div id="tag-pills-container" class="flex flex-wrap items-center gap-1.5 pt-2 border-t border-stone-100 dark:border-stone-700 text-xs">
+				<!-- 특수 필터 -->
+<div id="special-filter-container" class="flex flex-wrap items-center gap-1.5 pt-2 border-t border-stone-100 dark:border-stone-700 text-xs">
+    <span class="text-stone-500 dark:text-stone-400 font-medium mr-1">특수 필터:</span>
+    <button id="fav-filter-btn" onclick="toggleFavFilter()" class="px-2.5 py-1 rounded-md font-medium text-xs transition bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-600">
+        ⭐ 즐겨찾기만
+    </button>
+</div>
                     <span class="text-stone-500 dark:text-stone-400 font-medium mr-1">태그 필터:</span>
                 </div>
             </div>
 			
 			<!-- Batch Action Bar (일괄 작업 바) -->
-            <div id="batch-action-bar" class="hidden bg-red-50 dark:bg-red-800 border border-red-200 dark:border-red-700 p-3.5 rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-sm transition-colors">
+            <div id="batch-action-bar" class="hidden bg-blush-50 dark:bg-blush-900 border border-blush-200 dark:border-blush-800 p-3.5 rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-sm transition-colors">
                 <div class="flex items-center space-x-2 text-sm text-stone-900 dark:text-stone-100 font-medium">
                     <span class="w-2.5 h-2.5 rounded-full bg-brand-600 inline-block animate-pulse"></span>
                     <span id="selected-count-text">0개 선택됨</span>
@@ -196,6 +288,10 @@
                 </div>
 
                 <div class="flex items-center space-x-2">
+				<button id="detail-fav-btn" onclick="toggleCurrentFavorite()" class="inline-flex items-center space-x-1 text-sm font-medium text-stone-600 dark:text-stone-300 bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-700 border border-stone-300 dark:border-stone-600 px-3 py-1.5 rounded-lg transition">
+    <span id="detail-fav-icon">☆</span>
+    <span>즐겨찾기</span>
+</button>
                     <button onclick="downloadCurrentPostTxt()" class="inline-flex items-center space-x-1 text-sm font-medium text-amber-900 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 border border-amber-200 dark:border-amber-800 px-3 py-1.5 rounded-lg transition shadow-sm">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                         <span>.txt 다운로드</span>
@@ -275,6 +371,7 @@
                         <div class="flex items-center space-x-1.5">
                             <input type="text" id="keyword-input" placeholder="인물명/키워드 강조" class="px-2.5 py-1 border border-stone-300 dark:border-stone-600 rounded-lg text-xs bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-1 focus:ring-brand-500 w-36">
                             <button onclick="applyKeywordHighlight()" class="px-2.5 py-1 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 transition">강조</button>
+							<button onclick="nextMatch()" title="다음 매치로 이동" class="px-2.5 py-1 border border-stone-300 dark:border-stone-600 rounded-lg text-xs font-medium text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700">▼</button>
                             <button onclick="clearKeywordHighlight()" class="px-2 py-1 border border-stone-300 dark:border-stone-600 rounded-lg text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-700">해제</button>
                         </div>
                     </div>
@@ -316,12 +413,12 @@
 
                 <div>
                     <label class="block text-xs font-bold uppercase text-stone-600 dark:text-stone-400 mb-1">제목 *</label>
-                    <input type="text" id="editor-title" required placeholder="소설 제목 또는 회차 제목을 입력하세요" class="w-full px-4 py-2.5 border border-stone-300 dark:border-stone-600 rounded-lg text-sm font-medium bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                    <input type="text" id="editor-title" required oninput="scheduleAutosave()" required placeholder="소설 제목 또는 회차 제목을 입력하세요" class="w-full px-4 py-2.5 border border-stone-300 dark:border-stone-600 rounded-lg text-sm font-medium bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-brand-500">
                 </div>
 
                 <div>
                     <label class="block text-xs font-bold uppercase text-stone-600 dark:text-stone-400 mb-1">태그 (쉼표로 구분)</label>
-                    <input type="text" id="editor-tags" placeholder="예: 판타지, 회귀, 1화, 장편" class="w-full px-4 py-2.5 border border-stone-300 dark:border-stone-600 rounded-lg text-sm bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                    <input type="text" list="tag-suggestions" id="editor-tags" oninput="scheduleAutosave()" placeholder="예: 판타지, 회귀, 1화, 장편" class="w-full px-4 py-2.5 border border-stone-300 dark:border-stone-600 rounded-lg text-sm bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-brand-500"><datalist id="tag-suggestions"></datalist>
                     <p class="text-[11px] text-stone-400 mt-1">쉼표(,)로 구분하여 여러 태그를 입력할 수 있습니다.</p>
                 </div>
 
@@ -330,7 +427,7 @@
                         <label class="block text-xs font-bold uppercase text-stone-600 dark:text-stone-400">본문 *</label>
                         <span id="editor-live-char-count" class="text-xs font-mono text-stone-500 dark:text-stone-400">글자수: 0자 / 0자</span>
                     </div>
-                    <textarea id="editor-content" required rows="20" oninput="updateLiveCharCount()" placeholder="소설 본문을 입력하거나 .txt 파일로 가져오세요..." class="w-full p-4 border border-stone-300 dark:border-stone-600 rounded-lg text-sm leading-relaxed bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-brand-500 font-nanum-gothic resize-y"></textarea>
+                    <textarea id="editor-content" required rows="20" oninput="updateLiveCharCount(); scheduleAutosave();" placeholder="본문을 입력하거나 .txt 파일로 가져오세요..." class="w-full p-4 border border-stone-300 dark:border-stone-600 rounded-lg text-sm leading-relaxed bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-brand-500 font-nanum-gothic resize-y"></textarea>
                 </div>
 
                 <div class="flex justify-end space-x-3 pt-3 border-t border-stone-100 dark:border-stone-700">
@@ -343,9 +440,15 @@
                 </div>
             </form>
 
+<div class="flex justify-end">
+    <button type="button" onclick="clearDraft()" class="text-xs text-stone-500 dark:text-stone-400 hover:text-red-500 transition">
+        🗑️ 임시저장 삭제
+    </button>
+</div>
+
             <div class="bg-amber-50/70 dark:bg-amber-950/30 border-2 border-dashed border-amber-300 dark:border-amber-800 rounded-xl p-5 text-center space-y-2">
                 <div class="text-2xl">📂</div>
-                <p class="text-xs text-amber-700 dark:text-amber-400">보유하신 소설 텍스트(.txt) 파일을 첨부하시면 제목과 본문 내용이 자동으로 채워집니다.</p>
+                <p class="text-xs text-amber-700 dark:text-amber-400">텍스트(.txt) 파일을 첨부하면 제목과 본문 내용이 자동으로 채워집니다.</p>
                 <div class="pt-2">
                     <label class="inline-flex items-center px-4 py-2 bg-white dark:bg-stone-800 border border-amber-300 dark:border-amber-700 rounded-lg text-xs font-semibold text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-stone-700 cursor-pointer shadow-sm transition">
                         <span>.txt 파일 선택 및 자동 입력</span>

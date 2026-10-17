@@ -1,151 +1,51 @@
+/* =========================================================
+   소설 백업 아카이브 - script.js (v2, 통합)
+   ========================================================= */
+
+// ---------- 상수 ----------
 const DB_NAME = 'novel_archive_db';
 const STORE_NAME = 'posts_store';
 const DB_VERSION = 1;
+const POSTS_PER_PAGE = 16;
 
+// ---------- 전역 상태 ----------
 let db = null;
 let posts = [];
 let currentView = 'list';
 let currentPostId = null;
 let currentPage = 1;
-const postsPerPage = 16;
 
 let selectedPostIds = new Set();
 
 let searchQuery = '';
 let selectedTag = '';
 let sortOrder = 'newest';
+let showFavOnly = false;              // ← 즐겨찾기 필터
 let currentFontClass = 'font-nanum-gothic';
 let currentLineHeightClass = 'leading-[2.0]';
 let currentPaddingClass = 'px-6 md:px-12';
 let currentHighlightKeyword = '';
 
-// IndexedDB 초기화 및 연결 함수
-function initDB() {
-    return new Promise((resolve, reject) => {
-        if (db) {
-            resolve(db);
-            return;
-        }
+/* =========================================================
+   유틸리티
+   ========================================================= */
 
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-        request.onerror = (event) => {
-            console.error("IndexedDB 열기 실패:", event.target.error);
-            reject(event.target.error);
-        };
-
-        request.onsuccess = (event) => {
-            db = event.target.result;
-            resolve(db);
-        };
-
-        request.onupgradeneeded = (event) => {
-            const database = event.target.result;
-            if (!database.objectStoreNames.contains(STORE_NAME)) {
-                database.createObjectStore(STORE_NAME);
-            }
-        };
-    });
-}
-
-// IndexedDB에서 데이터 불러오기
-async function loadPostsFromDB() {
-    try {
-        const database = await initDB();
-        return new Promise((resolve, reject) => {
-            const transaction = database.transaction(STORE_NAME, 'readonly');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.get('novel_posts_data');
-
-            request.onsuccess = (event) => {
-                resolve(event.target.result);
-            };
-
-            request.onerror = (event) => {
-                reject(event.target.error);
-            };
-        });
-    } catch (e) {
-        console.error("DB 로드 오류", e);
-        return null;
-    }
-}
-
-// IndexedDB에 데이터 저장하기
-async function savePostsToDB(data) {
-    try {
-        const database = await initDB();
-        return new Promise((resolve, reject) => {
-            const transaction = database.transaction(STORE_NAME, 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.put(data, 'novel_posts_data');
-
-            request.onsuccess = () => {
-                resolve(true);
-            };
-
-            request.onerror = (event) => {
-                console.error("DB 저장 오류:", event.target.error);
-                alert("대용량 데이터 저장 중 오류가 발생했습니다.");
-                reject(event.target.error);
-            };
-        });
-    } catch (e) {
-        console.error("DB 트랜잭션 오류", e);
-    }
-}
-
-async function loadPosts() {
-    try {
-        const savedData = await loadPostsFromDB();
-        if (savedData && Array.isArray(savedData)) {
-            posts = savedData;
-        } else {
-            posts = getInitialSamplePosts();
-            await savePostsToDB(posts);
-        }
-    } catch (e) {
-        console.error("Failed to load DB", e);
-        posts = getInitialSamplePosts();
-    }
-    renderApp();
-}
-
-async function savePosts() {
-    await savePostsToDB(posts);
-}
-
-function initDarkMode() {
-    const isDark = localStorage.getItem('novel_archive_dark') === 'true';
-    if (isDark) {
-        document.documentElement.classList.add('dark');
-    } else {
-        document.documentElement.classList.remove('dark');
-    }
-}
-
-function toggleDarkMode() {
-    const isDark = document.documentElement.classList.toggle('dark');
-    localStorage.setItem('novel_archive_dark', isDark);
-    showToast(isDark ? '다크모드가 켜졌습니다.' : '라이트모드가 켜졌습니다.');
+function findPostById(id) {
+    if (id === null || id === undefined) return null;
+    return posts.find(p => String(p.id) === String(id)) || null;
 }
 
 function formatDate(date = new Date()) {
     const pad = (n) => String(n).padStart(2, '0');
-    const year = date.getFullYear();
-    const month = pad(date.getMonth() + 1);
-    const day = pad(date.getDate());
-    const hours = pad(date.getHours());
-    const minutes = pad(date.getMinutes());
-    const seconds = pad(date.getSeconds());
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function getCharCountInfo(str) {
     if (!str) return { withSpace: 0, withoutSpace: 0 };
-    const withSpace = str.length;
-    const withoutSpace = str.replace(/\s+/g, '').length;
-    return { withSpace, withoutSpace };
+    return {
+        withSpace: str.length,
+        withoutSpace: str.replace(/\s+/g, '').length
+    };
 }
 
 function formatCharCountStr(str) {
@@ -155,7 +55,7 @@ function formatCharCountStr(str) {
 
 function escapeHtml(str) {
     if (!str) return '';
-    return str
+    return String(str)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -163,35 +63,323 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
+function getRandomAuthorId(prefix) {
+    let randomNum = '';
+    for (let i = 0; i < 6; i++) {
+        randomNum += Math.floor(Math.random() * 10);
+    }
+    return `${prefix}-${randomNum}`;
+}
+
+function normalizePost(p) {
+    return {
+        ...p,
+        id: Number(p.id),
+        tags: Array.isArray(p.tags) ? p.tags : [],
+        comments: Array.isArray(p.comments) ? p.comments.map(normalizeComment) : []
+    };
+}
+
+function normalizeComment(c) {
+    return {
+        ...c,
+        id: Number(c.id),
+        replies: Array.isArray(c.replies) ? c.replies.map(r => ({ ...r, id: Number(r.id) })) : []
+    };
+}
+
+/* =========================================================
+   즐겨찾기
+   ========================================================= */
+
+function getFavs() {
+    try {
+        return JSON.parse(localStorage.getItem('novel_favs') || '[]').map(Number);
+    } catch (e) {
+        return [];
+    }
+}
+
+function isFavorite(id) {
+    return getFavs().includes(Number(id));
+}
+
+function toggleFavorite(id) {
+    const favs = getFavs();
+    const numId = Number(id);
+    const idx = favs.indexOf(numId);
+    if (idx === -1) favs.push(numId);
+    else favs.splice(idx, 1);
+    localStorage.setItem('novel_favs', JSON.stringify(favs));
+    renderListView();
+    return idx === -1;   // 새로 추가되었으면 true
+}
+
+function toggleCurrentFavorite() {
+    if (currentPostId === null) return;
+    const added = toggleFavorite(currentPostId);
+    updateDetailFavButton();
+    showToast(added ? '⭐ 즐겨찾기에 추가되었습니다.' : '즐겨찾기에서 제거되었습니다.');
+}
+
+function updateDetailFavButton() {
+    const icon = document.getElementById('detail-fav-icon');
+    if (!icon) return;
+    const fav = isFavorite(currentPostId);
+    icon.innerText = fav ? '★' : '☆';
+    icon.style.color = fav ? '#e85d75' : '';
+}
+
+function toggleFavFilter() {
+    showFavOnly = !showFavOnly;
+    currentPage = 1;
+    const btn = document.getElementById('fav-filter-btn');
+    if (btn) btn.classList.toggle('active', showFavOnly);
+    renderListView();
+}
+
+/* =========================================================
+   진행률 (이어보기)
+   ========================================================= */
+
+function saveProgress() {
+    if (currentView !== 'detail' || currentPostId === null) return;
+    const article = document.getElementById('detail-content');
+    if (!article) return;
+    const rect = article.getBoundingClientRect();
+    const total = article.offsetHeight - window.innerHeight;
+    const progress = total > 0
+        ? Math.max(0, Math.min(1, -rect.top / total))
+        : 0;
+    localStorage.setItem(`progress_${currentPostId}`, JSON.stringify({
+        pct: progress,
+        at: Date.now()
+    }));
+}
+
+function getProgress(id) {
+    try {
+        const raw = localStorage.getItem(`progress_${id}`);
+        if (!raw) return 0;
+        return JSON.parse(raw).pct || 0;
+    } catch (e) {
+        return 0;
+    }
+}
+
+function restoreProgress() {
+    if (currentPostId === null) return;
+    const pct = getProgress(currentPostId);
+    if (pct <= 0.02) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+    }
+    setTimeout(() => {
+        const article = document.getElementById('detail-content');
+        if (!article) return;
+        const total = article.offsetHeight - window.innerHeight;
+        window.scrollTo({ top: Math.max(0, total * pct), behavior: 'smooth' });
+    }, 100);
+}
+
+// 스크롤 시 자동 저장 (throttle)
+let scrollSaveTimer;
+window.addEventListener('scroll', () => {
+    if (currentView !== 'detail') return;
+    clearTimeout(scrollSaveTimer);
+    scrollSaveTimer = setTimeout(saveProgress, 500);
+});
+
+/* =========================================================
+   자동 저장 (에디터)
+   ========================================================= */
+
+let autosaveTimer;
+function scheduleAutosave() {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => {
+        const title = document.getElementById('editor-title');
+        const tags = document.getElementById('editor-tags');
+        const content = document.getElementById('editor-content');
+        const postId = document.getElementById('editor-post-id');
+        if (!title || !content) return;
+        if (!title.value.trim() && !content.value.trim()) return;
+        localStorage.setItem('novel_draft', JSON.stringify({
+            title: title.value,
+            tags: tags ? tags.value : '',
+            content: content.value,
+            postId: postId ? postId.value : '',
+            savedAt: Date.now()
+        }));
+    }, 3000);
+}
+
+function clearDraft() {
+    if (confirm('임시저장된 초안을 삭제하시겠습니까?')) {
+        localStorage.removeItem('novel_draft');
+        showToast('임시저장이 삭제되었습니다.');
+    }
+}
+
+function checkDraft(isNew) {
+    const raw = localStorage.getItem('novel_draft');
+    if (!raw) return false;
+    let d;
+    try {
+        d = JSON.parse(raw);
+    } catch (e) {
+        localStorage.removeItem('novel_draft');
+        return false;
+    }
+    // 24시간 지난 건 무시
+    if (Date.now() - d.savedAt > 24 * 3600 * 1000) {
+        localStorage.removeItem('novel_draft');
+        return false;
+    }
+    // 새 글 작성인데 이전 draft가 "수정 중"이던 것이면 무시
+    if (isNew && d.postId) return false;
+    // 수정 모드인데 draft의 postId가 다르면 무시
+    if (!isNew && String(d.postId) !== String(currentPostId)) return false;
+
+    const when = new Date(d.savedAt).toLocaleString();
+    if (confirm(`작성 중이던 글이 있습니다 (${when}).\n복구하시겠습니까?\n(취소 시 임시저장이 삭제됩니다.)`)) {
+        document.getElementById('editor-title').value = d.title || '';
+        document.getElementById('editor-tags').value = d.tags || '';
+        document.getElementById('editor-content').value = d.content || '';
+        updateLiveCharCount();
+        return true;
+    } else {
+        localStorage.removeItem('novel_draft');
+    }
+    return false;
+}
+
+/* =========================================================
+   태그 자동완성
+   ========================================================= */
+
+function updateTagSuggestions() {
+    const allTags = new Set();
+    posts.forEach(p => (p.tags || []).forEach(t => allTags.add(t)));
+    const dl = document.getElementById('tag-suggestions');
+    if (!dl) return;
+    dl.innerHTML = '';
+    Array.from(allTags).sort().forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t;
+        dl.appendChild(opt);
+    });
+}
+
+/* =========================================================
+   IndexedDB
+   ========================================================= */
+
+function initDB() {
+    return new Promise((resolve, reject) => {
+        if (db) return resolve(db);
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onerror = (event) => {
+            console.error("IndexedDB 열기 실패:", event.target.error);
+            reject(event.target.error);
+        };
+        request.onsuccess = (event) => {
+            db = event.target.result;
+            resolve(db);
+        };
+        request.onupgradeneeded = (event) => {
+            const database = event.target.result;
+            if (!database.objectStoreNames.contains(STORE_NAME)) {
+                database.createObjectStore(STORE_NAME);
+            }
+        };
+    });
+}
+
+async function loadPostsFromDB() {
+    const database = await initDB();
+    return new Promise((resolve, reject) => {
+        const transaction = database.transaction(STORE_NAME, 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.get('novel_posts_data');
+        request.onsuccess = (event) => resolve(event.target.result);
+        request.onerror = (event) => reject(event.target.error);
+    });
+}
+
+async function savePostsToDB(data) {
+    const database = await initDB();
+    return new Promise((resolve, reject) => {
+        const transaction = database.transaction(STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.put(data, 'novel_posts_data');
+        request.onsuccess = () => resolve(true);
+        request.onerror = (event) => {
+            console.error("DB 저장 오류:", event.target.error);
+            alert("대용량 데이터 저장 중 오류가 발생했습니다.");
+            reject(event.target.error);
+        };
+    });
+}
+
+/* =========================================================
+   초기 로딩
+   ========================================================= */
+
+async function loadPosts() {
+    try {
+        const savedData = await loadPostsFromDB();
+        if (Array.isArray(savedData)) {
+            posts = savedData.map(normalizePost);
+        } else {
+            posts = getInitialSamplePosts();
+            await savePostsToDB(posts);
+        }
+    } catch (e) {
+        console.error("Failed to load DB", e);
+        posts = getInitialSamplePosts();
+    }
+}
+
+async function savePosts() {
+    await savePostsToDB(posts);
+}
+
+function initDarkMode() {
+    const isDark = localStorage.getItem('novel_archive_dark') === 'true';
+    document.documentElement.classList.toggle('dark', isDark);
+}
+
+function toggleDarkMode() {
+    const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('novel_archive_dark', isDark);
+    showToast(isDark ? '다크모드가 켜졌습니다.' : '라이트모드가 켜졌습니다.');
+}
+
+/* =========================================================
+   샘플 데이터
+   ========================================================= */
+
 function getInitialSamplePosts() {
-    const samplePosts = [];
-    const sampleTitles = [
-        "샘플 텍스트 - 제1화"
-    ];
-
-    const sampleTagsList = [["태그1", "태그2"]];
     const now = new Date();
-
-    for (let i = 0; i < sampleTitles.length; i++) {
-        const pastDate = new Date(now.getTime() - (sampleTitles.length - i) * 3600000 * 4);
-        const tagGroup = sampleTagsList[i % sampleTagsList.length];
-        
-        samplePosts.push({
-            id: sampleTitles.length - i,
-            title: sampleTitles[i],
-            content: `[제 ${i + 1}화 본문 예시]\n\n본문은 백업용 텍스트 파일(.txt)을 업로드하여 언제든지 자동으로 등록하거나 수정하실 수 있습니다.`,
-            tags: tagGroup,
+    const pastDate = new Date(now.getTime() - 4 * 3600000);
+    return [
+        {
+            id: 1,
+            title: "샘플 텍스트 - 제1화",
+            content: `[제 1화 본문 예시]\n\n본문은 백업용 텍스트 파일(.txt)을 업로드하여 언제든지 자동으로 등록하거나 수정하실 수 있습니다.`,
+            tags: ["태그1", "태그2"],
             createdAt: formatDate(pastDate),
             updatedAt: null,
             comments: [
                 {
-                    id: 1000 + i,
+                    id: 1000,
                     authorId: getRandomAuthorId('R'),
                     content: "첫 번째 댓글.",
                     createdAt: formatDate(new Date(pastDate.getTime() + 600000)),
                     replies: [
                         {
-                            id: 2000 + i,
+                            id: 2000,
                             authorId: getRandomAuthorId('RR'),
                             content: "답댓글.",
                             createdAt: formatDate(new Date(pastDate.getTime() + 1200000))
@@ -199,10 +387,8 @@ function getInitialSamplePosts() {
                     ]
                 }
             ]
-        });
-    }
-
-    return samplePosts;
+        }
+    ];
 }
 
 async function resetToSampleData() {
@@ -211,10 +397,14 @@ async function resetToSampleData() {
         await savePostsToDB(posts);
         selectedPostIds.clear();
         currentPage = 1;
-        renderApp();
+        navigateTo('list');
         showToast("리셋 완료");
     }
 }
+
+/* =========================================================
+   뷰 네비게이션
+   ========================================================= */
 
 function openNewPostEditor() {
     saveScrollPosition();
@@ -225,11 +415,12 @@ function openNewPostEditor() {
 function navigateTo(viewName, postId = null) {
     if (currentView === 'detail' && viewName !== 'detail') {
         saveScrollPosition();
+        saveProgress();
     }
 
     currentView = viewName;
-    if (postId !== null) {
-        currentPostId = postId;
+    if (postId !== null && postId !== undefined) {
+        currentPostId = Number(postId);
     }
 
     document.getElementById('view-list').classList.add('hidden');
@@ -256,44 +447,31 @@ function saveScrollPosition() {
     }
 }
 
-function restoreScrollPosition() {
-    if (currentPostId !== null) {
-        const savedPos = localStorage.getItem(`novel_scroll_${currentPostId}`);
-        if (savedPos !== null) {
-            setTimeout(() => {
-                window.scrollTo({ top: parseInt(savedPos, 10), behavior: 'auto' });
-            }, 50);
-        } else {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-    }
-}
-
 function showToast(message) {
     const toast = document.getElementById('toast');
     document.getElementById('toast-message').innerText = message;
     toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
     toast.classList.add('opacity-100', 'translate-y-0');
-
-    setTimeout(() => {
+    clearTimeout(window.__toastTimer);
+    window.__toastTimer = setTimeout(() => {
         toast.classList.remove('opacity-100', 'translate-y-0');
         toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
     }, 2500);
 }
+
+/* =========================================================
+   JSON 백업 / 복원
+   ========================================================= */
 
 function exportToJson() {
     if (posts.length === 0) {
         alert("다운로드할 게시글 데이터가 없습니다.");
         return;
     }
-
     const dataStr = JSON.stringify(posts, null, 2);
     const blob = new Blob([dataStr], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-    
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const a = document.createElement("a");
     a.href = url;
     a.download = `novel_archive_backup_${dateStr}.json`;
@@ -301,31 +479,27 @@ function exportToJson() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-
     showToast("전체 데이터가 JSON 파일로 다운로드되었습니다.");
 }
 
 function importFromJson(event) {
     const file = event.target.files[0];
     if (!file) return;
-
     if (!file.name.endsWith('.json')) {
         alert('.json 확장자의 파일만 업로드할 수 있습니다.');
+        event.target.value = '';
         return;
     }
-
     const reader = new FileReader();
-    reader.onload = async function(e) {
+    reader.onload = async function (e) {
         try {
             const importedData = JSON.parse(e.target.result);
-
             if (!Array.isArray(importedData)) {
                 alert("올바른 게시글 데이터(JSON 배열) 형식이 아닙니다.");
                 return;
             }
-
             if (confirm("기존 저장된 데이터를 덮어쓰고 가져온 JSON 데이터로 복원하시겠습니까?")) {
-                posts = importedData;
+                posts = importedData.map(normalizePost);
                 await savePostsToDB(posts);
                 selectedPostIds.clear();
                 currentPage = 1;
@@ -333,32 +507,29 @@ function importFromJson(event) {
                 showToast("JSON 데이터 복원이 완료되었습니다.");
             }
         } catch (err) {
-            alert("JSON 파일을 파싱하는 중 오류가 발생했습니다. 올바른 백업 파일인지 확인해 주세요.");
+            alert("JSON 파일을 파싱하는 중 오류가 발생했습니다.");
         }
     };
-
     reader.readAsText(file, 'UTF-8');
     event.target.value = '';
 }
 
+/* =========================================================
+   일괄 선택
+   ========================================================= */
+
 function toggleSelectPost(id, isChecked) {
-    if (isChecked) {
-        selectedPostIds.add(id);
-    } else {
-        selectedPostIds.delete(id);
-    }
+    const numId = Number(id);
+    if (isChecked) selectedPostIds.add(numId);
+    else selectedPostIds.delete(numId);
     updateSelectionUI();
     updateMasterCheckboxState();
 }
 
 function toggleSelectAll(isChecked) {
-    const pagePosts = getCurrentPagePosts();
-    pagePosts.forEach(post => {
-        if (isChecked) {
-            selectedPostIds.add(post.id);
-        } else {
-            selectedPostIds.delete(post.id);
-        }
+    getCurrentPagePosts().forEach(post => {
+        if (isChecked) selectedPostIds.add(Number(post.id));
+        else selectedPostIds.delete(Number(post.id));
     });
     updateSelectionUI();
     renderListView();
@@ -372,10 +543,9 @@ function clearSelection() {
 
 async function deleteSelectedPosts() {
     if (selectedPostIds.size === 0) return;
-
     const count = selectedPostIds.size;
     if (confirm(`선택한 ${count}개의 게시글을 정말로 삭제하시겠습니까?\n삭제된 글은 복구할 수 없습니다.`)) {
-        posts = posts.filter(p => !selectedPostIds.has(p.id));
+        posts = posts.filter(p => !selectedPostIds.has(Number(p.id)));
         selectedPostIds.clear();
         await savePosts();
         showToast(`${count}개의 게시글이 일괄 삭제되었습니다.`);
@@ -387,7 +557,6 @@ function updateSelectionUI() {
     const count = selectedPostIds.size;
     const bar = document.getElementById('batch-action-bar');
     const countText = document.getElementById('selected-count-text');
-
     if (count > 0) {
         bar.classList.remove('hidden');
         countText.innerText = `${count}개 선택됨`;
@@ -398,16 +567,13 @@ function updateSelectionUI() {
 
 async function promptBatchAddTag() {
     if (selectedPostIds.size === 0) return;
-
     const tagInput = prompt("추가할 태그를 입력해 주세요 (여러 개일 경우 쉼표로 구분):");
     if (!tagInput || !tagInput.trim()) return;
-
-    const newTags = tagInput.split(',').map(t => t.trim()).filter(t => t.length > 0);
+    const newTags = tagInput.split(',').map(t => t.trim()).filter(Boolean);
     if (newTags.length === 0) return;
-
     let modifiedCount = 0;
     posts.forEach(post => {
-        if (selectedPostIds.has(post.id)) {
+        if (selectedPostIds.has(Number(post.id))) {
             if (!post.tags) post.tags = [];
             let changed = false;
             newTags.forEach(tag => {
@@ -419,7 +585,6 @@ async function promptBatchAddTag() {
             if (changed) modifiedCount++;
         }
     });
-
     if (modifiedCount > 0) {
         await savePosts();
         renderListView();
@@ -431,20 +596,16 @@ async function promptBatchAddTag() {
 
 async function promptBatchRemoveTag() {
     if (selectedPostIds.size === 0) return;
-
     const tagInput = prompt("삭제할 태그 이름을 입력해 주세요:");
     if (!tagInput || !tagInput.trim()) return;
-
     const targetTag = tagInput.trim();
     let modifiedCount = 0;
-
     posts.forEach(post => {
-        if (selectedPostIds.has(post.id) && post.tags && post.tags.includes(targetTag)) {
+        if (selectedPostIds.has(Number(post.id)) && post.tags && post.tags.includes(targetTag)) {
             post.tags = post.tags.filter(t => t !== targetTag);
             modifiedCount++;
         }
     });
-
     if (modifiedCount > 0) {
         await savePosts();
         renderListView();
@@ -454,33 +615,9 @@ async function promptBatchRemoveTag() {
     }
 }
 
-function getCurrentPagePosts() {
-    const filteredPosts = getFilteredAndSortedPosts();
-    const totalPosts = filteredPosts.length;
-    const totalPages = Math.ceil(totalPosts / postsPerPage) || 1;
-    const validPage = Math.min(currentPage, totalPages);
-    
-    const startIndex = (validPage - 1) * postsPerPage;
-    const endIndex = Math.min(startIndex + postsPerPage, totalPosts);
-    return filteredPosts.slice(startIndex, endIndex);
-}
-
-function updateMasterCheckboxState() {
-    const pagePosts = getCurrentPagePosts();
-    const selectAllCheckbox = document.getElementById('select-all-checkbox');
-    if (!selectAllCheckbox) return;
-
-    if (pagePosts.length > 0 && pagePosts.every(p => selectedPostIds.has(p.id))) {
-        selectAllCheckbox.checked = true;
-        selectAllCheckbox.indeterminate = false;
-    } else if (pagePosts.some(p => selectedPostIds.has(p.id))) {
-        selectAllCheckbox.checked = false;
-        selectAllCheckbox.indeterminate = true;
-    } else {
-        selectAllCheckbox.checked = false;
-        selectAllCheckbox.indeterminate = false;
-    }
-}
+/* =========================================================
+   필터 / 정렬 / 페이지
+   ========================================================= */
 
 function getTotalCommentCount(post) {
     let count = post.comments ? post.comments.length : 0;
@@ -492,33 +629,43 @@ function getTotalCommentCount(post) {
     return count;
 }
 
+function getEpisodeNumber(title) {
+    const m = String(title).match(/(\d+)\s*화/);
+    return m ? parseInt(m[1], 10) : 999999;
+}
+
 function getFilteredAndSortedPosts() {
     let result = [...posts];
 
     if (searchQuery.trim() !== '') {
         const q = searchQuery.toLowerCase();
-        result = result.filter(p => p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q));
+        result = result.filter(p =>
+            p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q)
+        );
     }
 
     if (selectedTag) {
         result = result.filter(p => p.tags && p.tags.includes(selectedTag));
     }
 
+    if (showFavOnly) {
+        const favs = getFavs();
+        result = result.filter(p => favs.includes(Number(p.id)));
+    }
+
     result.sort((a, b) => {
-        if (sortOrder === 'newest') {
-            return new Date(b.createdAt) - new Date(a.createdAt);
-        } else if (sortOrder === 'oldest') {
-            return new Date(a.createdAt) - new Date(b.createdAt);
-        } else if (sortOrder === 'title') {
-            return a.title.localeCompare(b.title, 'ko');
-        } else if (sortOrder === 'updated') {
-            const timeA = new Date(a.updatedAt || a.createdAt);
-            const timeB = new Date(b.updatedAt || b.createdAt);
-            return timeB - timeA;
-        } else if (sortOrder === 'length') {
-            return getCharCountInfo(b.content).withSpace - getCharCountInfo(a.content).withSpace;
-        } else if (sortOrder === 'comments') {
-            return getTotalCommentCount(b) - getTotalCommentCount(a);
+        switch (sortOrder) {
+            case 'newest': return new Date(b.createdAt) - new Date(a.createdAt);
+            case 'oldest': return new Date(a.createdAt) - new Date(b.createdAt);
+            case 'title': return a.title.localeCompare(b.title, 'ko');
+            case 'updated': {
+                const ta = new Date(a.updatedAt || a.createdAt);
+                const tb = new Date(b.updatedAt || b.createdAt);
+                return tb - ta;
+            }
+            case 'length': return getCharCountInfo(b.content).withSpace - getCharCountInfo(a.content).withSpace;
+            case 'comments': return getTotalCommentCount(b) - getTotalCommentCount(a);
+            case 'episode': return getEpisodeNumber(a.title) - getEpisodeNumber(b.title);
         }
         return 0;
     });
@@ -526,17 +673,66 @@ function getFilteredAndSortedPosts() {
     return result;
 }
 
+function getCurrentPagePosts() {
+    const filtered = getFilteredAndSortedPosts();
+    const totalPages = Math.ceil(filtered.length / POSTS_PER_PAGE) || 1;
+    const validPage = Math.min(currentPage, totalPages);
+    const startIndex = (validPage - 1) * POSTS_PER_PAGE;
+    return filtered.slice(startIndex, startIndex + POSTS_PER_PAGE);
+}
+
+function updateMasterCheckboxState() {
+    const pagePosts = getCurrentPagePosts();
+    const selectAllCheckbox = document.getElementById('select-all-checkbox');
+    if (!selectAllCheckbox) return;
+    const allChecked = pagePosts.length > 0 && pagePosts.every(p => selectedPostIds.has(Number(p.id)));
+    const someChecked = pagePosts.some(p => selectedPostIds.has(Number(p.id)));
+    if (allChecked) {
+        selectAllCheckbox.checked = true;
+        selectAllCheckbox.indeterminate = false;
+    } else if (someChecked) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = true;
+    } else {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+    }
+}
+
+/* =========================================================
+   통계 대시보드
+   ========================================================= */
+
+function renderStats() {
+    const elPosts = document.getElementById('stat-posts');
+    const elChars = document.getElementById('stat-chars');
+    const elToday = document.getElementById('stat-today');
+    const elFavs = document.getElementById('stat-favs');
+    if (!elPosts) return;
+
+    elPosts.innerText = posts.length.toLocaleString();
+    elChars.innerText = posts.reduce((s, p) => s + (p.content ? p.content.length : 0), 0).toLocaleString();
+    const today = formatDate().slice(0, 10);
+    elToday.innerText = posts.filter(p => (p.createdAt || '').startsWith(today)).length.toLocaleString();
+    elFavs.innerText = getFavs().length.toLocaleString();
+}
+
+/* =========================================================
+   리스트 뷰
+   ========================================================= */
+
 function renderListView() {
     populateTagOptions();
+    renderStats();
+    updateFavFilterButton();
 
     const filteredPosts = getFilteredAndSortedPosts();
     const totalPosts = filteredPosts.length;
-    const totalPages = Math.ceil(totalPosts / postsPerPage) || 1;
-
+    const totalPages = Math.ceil(totalPosts / POSTS_PER_PAGE) || 1;
     if (currentPage > totalPages) currentPage = totalPages;
 
-    const startIndex = (currentPage - 1) * postsPerPage;
-    const endIndex = Math.min(startIndex + postsPerPage, totalPosts);
+    const startIndex = (currentPage - 1) * POSTS_PER_PAGE;
+    const endIndex = Math.min(startIndex + POSTS_PER_PAGE, totalPosts);
     const pagePosts = filteredPosts.slice(startIndex, endIndex);
 
     const tbody = document.getElementById('posts-table-body');
@@ -553,22 +749,33 @@ function renderListView() {
             tr.onclick = () => navigateTo('detail', post.id);
 
             const commentCount = getTotalCommentCount(post);
-
-            const tagsHtml = (post.tags && post.tags.length > 0) 
-                ? post.tags.map(t => `<span class="inline-block bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 px-2 py-0.5 rounded text-[11px] font-medium mr-1">#${t}</span>`).join('')
+            const tagsHtml = (post.tags && post.tags.length > 0)
+                ? post.tags.map(t => `<span class="inline-block bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 px-2 py-0.5 rounded text-[11px] font-medium mr-1">#${escapeHtml(t)}</span>`).join('')
                 : '<span class="text-stone-400 dark:text-stone-500 text-xs">-</span>';
 
-            const isChecked = selectedPostIds.has(post.id);
+            const isChecked = selectedPostIds.has(Number(post.id));
+            const fav = isFavorite(post.id);
+            const pct = Math.round(getProgress(post.id) * 100);
+
+            // 진행률 뱃지
+            const progressHtml = pct > 1
+                ? `<span class="inline-block bg-mint-100 dark:bg-mint-900 text-mint-700 dark:text-mint-200 px-1.5 py-0.5 rounded text-[10px] font-mono mr-1">${pct}%</span>`
+                : '';
+
+            // 즐겨찾기 별
+            const favHtml = fav
+                ? `<span class="text-blush-500 text-base mr-1" title="즐겨찾기">★</span>`
+                : '';
 
             tr.innerHTML = `
                 <td class="py-3.5 px-3 text-center" onclick="event.stopPropagation()">
-                    <input type="checkbox" class="w-4 h-4 text-brand-600 rounded border-stone-300 focus:ring-brand-500 cursor-pointer" 
-                           value="${post.id}" ${isChecked ? 'checked' : ''} 
+                    <input type="checkbox" class="w-4 h-4 text-brand-600 rounded border-stone-300 focus:ring-brand-500 cursor-pointer"
+                           value="${post.id}" ${isChecked ? 'checked' : ''}
                            onchange="toggleSelectPost(${post.id}, this.checked)">
                 </td>
                 <td class="py-3.5 px-4 text-center font-mono text-xs text-stone-400">#${post.id}</td>
                 <td class="py-3.5 px-4 font-medium text-stone-900 dark:text-stone-100 hover:text-brand-600">
-                    ${escapeHtml(post.title)}
+                    ${favHtml}${progressHtml}${escapeHtml(post.title)}
                 </td>
                 <td class="py-3.5 px-4 text-center">
                     <div class="flex flex-wrap justify-center gap-1">${tagsHtml}</div>
@@ -597,10 +804,15 @@ function renderListView() {
     renderPaginationButtons(totalPages);
 }
 
+function updateFavFilterButton() {
+    const btn = document.getElementById('fav-filter-btn');
+    if (!btn) return;
+    btn.classList.toggle('active', showFavOnly);
+}
+
 function renderPaginationButtons(totalPages) {
     const container = document.getElementById('pagination-buttons');
     container.innerHTML = '';
-
     if (totalPages <= 1) return;
 
     const prevBtn = document.createElement('button');
@@ -630,37 +842,45 @@ function renderPaginationButtons(totalPages) {
 function populateTagOptions() {
     const tagSet = new Set();
     posts.forEach(p => {
-        if (p.tags && Array.isArray(p.tags)) {
-            p.tags.forEach(t => tagSet.add(t));
-        }
+        if (p.tags && Array.isArray(p.tags)) p.tags.forEach(t => tagSet.add(t));
     });
 
     const tagSelect = document.getElementById('tag-select');
-    const currentSelected = selectedTag;
     tagSelect.innerHTML = '<option value="">모든 태그 전체보기</option>';
 
     const pillsContainer = document.getElementById('tag-pills-container');
     pillsContainer.innerHTML = '<span class="text-stone-500 dark:text-stone-400 font-medium mr-1">태그 필터:</span>';
 
+    const makePillClass = (active) => `px-2 py-0.5 rounded-md font-medium text-xs transition ${
+        active
+            ? 'bg-brand-600 text-white'
+            : 'bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-600'
+    }`;
+
     const allPill = document.createElement('button');
-    allPill.className = `px-2 py-0.5 rounded-md font-medium text-xs transition ${selectedTag === '' ? 'bg-brand-600 text-white' : 'bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-600'}`;
+    allPill.className = makePillClass(selectedTag === '');
     allPill.innerText = '전체';
-    allPill.onclick = () => { selectedTag = ''; document.getElementById('tag-select').value = ''; currentPage = 1; renderListView(); };
+    allPill.onclick = () => {
+        selectedTag = '';
+        tagSelect.value = '';
+        currentPage = 1;
+        renderListView();
+    };
     pillsContainer.appendChild(allPill);
 
     tagSet.forEach(tag => {
         const opt = document.createElement('option');
         opt.value = tag;
         opt.innerText = `#${tag}`;
-        if (tag === currentSelected) opt.selected = true;
+        if (tag === selectedTag) opt.selected = true;
         tagSelect.appendChild(opt);
 
         const pill = document.createElement('button');
-        pill.className = `px-2 py-0.5 rounded-md font-medium text-xs transition ${selectedTag === tag ? 'bg-brand-600 text-white' : 'bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-600'}`;
+        pill.className = makePillClass(selectedTag === tag);
         pill.innerText = `#${tag}`;
         pill.onclick = () => {
             selectedTag = tag;
-            document.getElementById('tag-select').value = tag;
+            tagSelect.value = tag;
             currentPage = 1;
             renderListView();
         };
@@ -685,9 +905,14 @@ function handleSortChange() {
     renderListView();
 }
 
+/* =========================================================
+   상세 뷰
+   ========================================================= */
+
 function renderDetailView() {
-    const post = posts.find(p => p.id === currentPostId);
+    const post = findPostById(currentPostId);
     if (!post) {
+        console.warn('[renderDetailView] 게시글을 찾을 수 없음. currentPostId:', currentPostId);
         alert("존재하지 않는 게시글입니다.");
         navigateTo('list');
         return;
@@ -723,10 +948,19 @@ function renderDetailView() {
         });
     }
 
+    // 즐겨찾기 버튼 상태 반영
+    updateDetailFavButton();
+
     updateContentDisplay(post.content);
     updateAdjacentPostButtons();
     renderComments(post);
-    restoreScrollPosition();
+
+    // 진행률 복원
+    restoreProgress();
+
+    // 매치 초기화
+    searchMatches = [];
+    searchIndex = -1;
 }
 
 function updateContentDisplay(rawText) {
@@ -743,22 +977,54 @@ function updateContentDisplay(rawText) {
     contentEl.innerHTML = processedText;
 }
 
+let searchMatches = [];
+let searchIndex = -1;
+
 function applyKeywordHighlight() {
-    const input = document.getElementById('keyword-input');
-    currentHighlightKeyword = input.value.trim();
-    const post = posts.find(p => p.id === currentPostId);
-    if (post) {
-        updateContentDisplay(post.content);
-        if (currentHighlightKeyword) {
-            showToast(`'${currentHighlightKeyword}' 키워드가 강조되었습니다.`);
+    currentHighlightKeyword = document.getElementById('keyword-input').value.trim();
+    const post = findPostById(currentPostId);
+    if (!post) return;
+    updateContentDisplay(post.content);
+
+    // 매치 목록 재구성
+    searchMatches = Array.from(document.querySelectorAll('.keyword-highlight'));
+    searchIndex = -1;
+
+    if (currentHighlightKeyword) {
+        if (searchMatches.length > 0) {
+            // 첫 매치로 이동
+            nextMatch();
+            showToast(`'${currentHighlightKeyword}' ${searchMatches.length}개 매치 발견`);
+        } else {
+            showToast(`'${currentHighlightKeyword}' 매치 없음`);
         }
+    }
+}
+
+function nextMatch() {
+    if (searchMatches.length === 0) {
+        // 아직 강조가 안 되어 있으면 강조부터
+        applyKeywordHighlight();
+        return;
+    }
+    // 이전 활성 매치 해제
+    if (searchIndex >= 0 && searchMatches[searchIndex]) {
+        searchMatches[searchIndex].classList.remove('keyword-highlight-active');
+    }
+    searchIndex = (searchIndex + 1) % searchMatches.length;
+    const el = searchMatches[searchIndex];
+    if (el) {
+        el.classList.add('keyword-highlight-active');
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 }
 
 function clearKeywordHighlight() {
     document.getElementById('keyword-input').value = '';
     currentHighlightKeyword = '';
-    const post = posts.find(p => p.id === currentPostId);
+    searchMatches = [];
+    searchIndex = -1;
+    const post = findPostById(currentPostId);
     if (post) {
         updateContentDisplay(post.content);
         showToast('키워드 강조가 해제되었습니다.');
@@ -771,8 +1037,7 @@ function changeLineHeight(lhClass, btnEl) {
         b.classList.remove('border-brand-600', 'text-brand-700', 'dark:text-brand-300', 'font-semibold', 'bg-brand-50', 'dark:bg-brand-950/50');
     });
     btnEl.classList.add('border-brand-600', 'text-brand-700', 'dark:text-brand-300', 'font-semibold', 'bg-brand-50', 'dark:bg-brand-950/50');
-    
-    const post = posts.find(p => p.id === currentPostId);
+    const post = findPostById(currentPostId);
     if (post) updateContentDisplay(post.content);
 }
 
@@ -782,18 +1047,31 @@ function changePadding(pdClass, btnEl) {
         b.classList.remove('border-brand-600', 'text-brand-700', 'dark:text-brand-300', 'font-semibold', 'bg-brand-50', 'dark:bg-brand-950/50');
     });
     btnEl.classList.add('border-brand-600', 'text-brand-700', 'dark:text-brand-300', 'font-semibold', 'bg-brand-50', 'dark:bg-brand-950/50');
-    
-    const post = posts.find(p => p.id === currentPostId);
+    const post = findPostById(currentPostId);
     if (post) updateContentDisplay(post.content);
+}
+
+function changeFontFamily(fontClass, btnEl) {
+    currentFontClass = fontClass;
+    document.querySelectorAll('.font-btn').forEach(b => {
+        b.classList.remove('border-brand-600', 'text-brand-700', 'dark:text-brand-300', 'font-semibold', 'bg-brand-50', 'dark:bg-brand-950/50');
+    });
+    btnEl.classList.add('border-brand-600', 'text-brand-700', 'dark:text-brand-300', 'font-semibold', 'bg-brand-50', 'dark:bg-brand-950/50');
+    const post = findPostById(currentPostId);
+    if (post) updateContentDisplay(post.content);
+}
+
+function changeFontSize(sizeClass) {
+    const contentEl = document.getElementById('detail-content');
+    contentEl.classList.remove('text-sm', 'text-base', 'text-lg', 'text-xl');
+    contentEl.classList.add(sizeClass);
 }
 
 function updateAdjacentPostButtons() {
     const filteredPosts = getFilteredAndSortedPosts();
-    const currentIndex = filteredPosts.findIndex(p => p.id === currentPostId);
-
+    const currentIndex = filteredPosts.findIndex(p => String(p.id) === String(currentPostId));
     const btnPrev = document.getElementById('btn-prev-post');
     const btnNext = document.getElementById('btn-next-post');
-
     if (currentIndex > 0) {
         btnPrev.disabled = false;
         btnPrev.classList.remove('opacity-40', 'cursor-not-allowed');
@@ -801,7 +1079,6 @@ function updateAdjacentPostButtons() {
         btnPrev.disabled = true;
         btnPrev.classList.add('opacity-40', 'cursor-not-allowed');
     }
-
     if (currentIndex !== -1 && currentIndex < filteredPosts.length - 1) {
         btnNext.disabled = false;
         btnNext.classList.remove('opacity-40', 'cursor-not-allowed');
@@ -812,34 +1089,21 @@ function updateAdjacentPostButtons() {
 }
 
 function moveToAdjacentPost(direction) {
+    saveProgress();
     const filteredPosts = getFilteredAndSortedPosts();
-    const currentIndex = filteredPosts.findIndex(p => p.id === currentPostId);
+    const currentIndex = filteredPosts.findIndex(p => String(p.id) === String(currentPostId));
     if (currentIndex === -1) return;
-
-    let targetIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
+    const targetIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
     if (targetIndex >= 0 && targetIndex < filteredPosts.length) {
-        saveScrollPosition();
-        currentPostId = filteredPosts[targetIndex].id;
+        currentPostId = Number(filteredPosts[targetIndex].id);
         renderDetailView();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 }
 
-function changeFontFamily(fontClass, btnEl) {
-    currentFontClass = fontClass;
-    document.querySelectorAll('.font-btn').forEach(b => {
-        b.classList.remove('border-brand-600', 'text-brand-700', 'dark:text-brand-300', 'font-semibold', 'bg-brand-50', 'dark:bg-brand-950/50');
-    });
-    btnEl.classList.add('border-brand-600', 'text-brand-700', 'dark:text-brand-300', 'font-semibold', 'bg-brand-50', 'dark:bg-brand-950/50');
-
-    const post = posts.find(p => p.id === currentPostId);
-    if (post) updateContentDisplay(post.content);
-}
-
-function changeFontSize(sizeClass) {
-    const contentEl = document.getElementById('detail-content');
-    contentEl.classList.remove('text-sm', 'text-base', 'text-lg', 'text-xl');
-    contentEl.classList.add(sizeClass);
-}
+/* =========================================================
+   댓글
+   ========================================================= */
 
 function renderComments(post) {
     const container = document.getElementById('comments-list-container');
@@ -852,10 +1116,8 @@ function renderComments(post) {
 
     post.comments.forEach(comment => {
         if (!comment.authorId) comment.authorId = getRandomAuthorId('R');
-
         const commentEl = document.createElement('div');
         commentEl.className = 'pt-4 first:pt-0 space-y-3';
-
         commentEl.innerHTML = `
             <div class="flex items-start justify-between">
                 <div class="space-y-1 w-full">
@@ -865,19 +1127,12 @@ function renderComments(post) {
                     </div>
                     <div class="text-sm text-stone-800 dark:text-stone-200 novel-content whitespace-pre-line leading-relaxed">${escapeHtml(comment.content)}</div>
                     <div class="flex justify-end space-x-2 pt-1">
-                        <button onclick="toggleReplyBox(${comment.id})" class="text-xs font-medium text-brand-600 dark:text-brand-400 hover:text-brand-800 bg-brand-50 dark:bg-brand-950/50 px-2.5 py-1 rounded-md transition">
-                            답글 달기
-                        </button>
-                        <button onclick="toggleEditCommentBox(${comment.id})" class="text-xs font-medium text-stone-600 dark:text-stone-300 hover:text-stone-800 bg-stone-100 dark:bg-stone-700 px-2.5 py-1 rounded-md transition">
-                            수정
-                        </button>
-                        <button onclick="deleteComment(${comment.id})" class="text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-800 bg-red-50 dark:bg-red-950/50 px-2.5 py-1 rounded-md transition">
-                            삭제
-                        </button>
+                        <button onclick="toggleReplyBox(${comment.id})" class="text-xs font-medium text-brand-600 dark:text-brand-400 hover:text-brand-800 bg-brand-50 dark:bg-brand-950/50 px-2.5 py-1 rounded-md transition">답글 달기</button>
+                        <button onclick="toggleEditCommentBox(${comment.id})" class="text-xs font-medium text-stone-600 dark:text-stone-300 hover:text-stone-800 bg-stone-100 dark:bg-stone-700 px-2.5 py-1 rounded-md transition">수정</button>
+                        <button onclick="deleteComment(${comment.id})" class="text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-800 bg-red-50 dark:bg-red-950/50 px-2.5 py-1 rounded-md transition">삭제</button>
                     </div>
                 </div>
             </div>
-
             <div id="edit-comment-box-${comment.id}" class="hidden pt-2 space-y-2">
                 <textarea id="edit-comment-input-${comment.id}" rows="15" class="w-full p-2.5 border border-stone-300 dark:border-stone-600 rounded-lg text-sm bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-brand-500">${escapeHtml(comment.content)}</textarea>
                 <div class="flex justify-end space-x-2">
@@ -885,7 +1140,6 @@ function renderComments(post) {
                     <button onclick="submitEditComment(${comment.id})" class="px-3 py-1 bg-brand-600 text-white rounded-md text-xs font-medium">수정 완료</button>
                 </div>
             </div>
-
             <div id="reply-box-${comment.id}" class="hidden pl-6 pt-2 space-y-2">
                 <textarea id="reply-input-${comment.id}" rows="15" placeholder="답댓글을 작성하세요." class="w-full p-2.5 border border-stone-300 dark:border-stone-600 rounded-lg text-sm bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
                 <div class="flex justify-end space-x-2">
@@ -893,7 +1147,6 @@ function renderComments(post) {
                     <button onclick="submitReply(${comment.id})" class="px-3 py-1 bg-brand-600 text-white rounded-md text-xs font-medium">답댓글 등록</button>
                 </div>
             </div>
-
             <div class="pl-6 space-y-2.5 border-l-2 border-stone-100 dark:border-stone-700 mt-2">
                 ${(comment.replies || []).map(reply => {
                     if (!reply.authorId) reply.authorId = getRandomAuthorId('RR');
@@ -912,7 +1165,6 @@ function renderComments(post) {
                             </div>
                         </div>
                         <div class="text-sm text-stone-800 dark:text-stone-200 pl-4 whitespace-pre-line leading-relaxed">${escapeHtml(reply.content)}</div>
-                        
                         <div id="edit-reply-box-${reply.id}" class="hidden pt-2 space-y-2">
                             <textarea id="edit-reply-input-${reply.id}" rows="15" class="w-full p-2 border border-stone-300 dark:border-stone-600 rounded-lg text-xs bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-brand-500">${escapeHtml(reply.content)}</textarea>
                             <div class="flex justify-end space-x-2">
@@ -920,11 +1172,10 @@ function renderComments(post) {
                                 <button onclick="submitEditReply(${comment.id},${reply.id})" class="px-2.5 py-1 bg-brand-600 text-white rounded-md text-xs font-medium">수정 완료</button>
                             </div>
                         </div>
-                    </div>
-                `;}).join('')}
+                    </div>`;
+                }).join('')}
             </div>
         `;
-
         container.appendChild(commentEl);
     });
 }
@@ -933,49 +1184,30 @@ function toggleReplyBox(commentId) {
     const box = document.getElementById(`reply-box-${commentId}`);
     if (box) box.classList.toggle('hidden');
 }
-
 function toggleEditCommentBox(commentId) {
     const box = document.getElementById(`edit-comment-box-${commentId}`);
     if (box) box.classList.toggle('hidden');
 }
-
 function toggleEditReplyBox(replyId) {
     const box = document.getElementById(`edit-reply-box-${replyId}`);
     if (box) box.classList.toggle('hidden');
 }
 
-function getRandomAuthorId(prefix) {
-    let randomNum = '';
-    for (let i = 0; i < 6; i++) {
-        randomNum += Math.floor(Math.random() * 10);
-    }
-    return `${prefix}-${randomNum}`;
-}
-
 async function submitMainComment() {
     const input = document.getElementById('main-comment-input');
     const content = input.value.trim();
-    if (!content) {
-        alert('댓글 내용을 입력해 주세요.');
-        return;
-    }
-
-    const post = posts.find(p => p.id === currentPostId);
+    if (!content) return alert('댓글 내용을 입력해 주세요.');
+    const post = findPostById(currentPostId);
     if (!post) return;
-
     if (!post.comments) post.comments = [];
-
-    const newComment = {
+    post.comments.push({
         id: Date.now(),
         authorId: getRandomAuthorId('R'),
-        content: content,
+        content,
         createdAt: formatDate(),
         replies: []
-    };
-
-    post.comments.push(newComment);
+    });
     await savePosts();
-
     input.value = '';
     renderDetailView();
     showToast('댓글이 등록되었습니다.');
@@ -984,26 +1216,18 @@ async function submitMainComment() {
 async function submitReply(commentId) {
     const input = document.getElementById(`reply-input-${commentId}`);
     const content = input.value.trim();
-    if (!content) {
-        alert('답댓글 내용을 입력해 주세요.');
-        return;
-    }
-
-    const post = posts.find(p => p.id === currentPostId);
+    if (!content) return alert('답댓글 내용을 입력해 주세요.');
+    const post = findPostById(currentPostId);
     if (!post) return;
-
-    const parentComment = post.comments.find(c => c.id === commentId);
+    const parentComment = post.comments.find(c => String(c.id) === String(commentId));
     if (!parentComment) return;
-
     if (!parentComment.replies) parentComment.replies = [];
-
     parentComment.replies.push({
         id: Date.now(),
         authorId: getRandomAuthorId('RR'),
-        content: content,
+        content,
         createdAt: formatDate()
     });
-
     await savePosts();
     renderDetailView();
     showToast('답댓글이 등록되었습니다.');
@@ -1012,15 +1236,10 @@ async function submitReply(commentId) {
 async function submitEditComment(commentId) {
     const input = document.getElementById(`edit-comment-input-${commentId}`);
     const content = input.value.trim();
-    if (!content) {
-        alert('수정할 댓글 내용을 입력해 주세요.');
-        return;
-    }
-
-    const post = posts.find(p => p.id === currentPostId);
+    if (!content) return alert('수정할 댓글 내용을 입력해 주세요.');
+    const post = findPostById(currentPostId);
     if (!post) return;
-
-    const comment = post.comments.find(c => c.id === commentId);
+    const comment = post.comments.find(c => String(c.id) === String(commentId));
     if (comment) {
         comment.content = content;
         await savePosts();
@@ -1031,11 +1250,9 @@ async function submitEditComment(commentId) {
 
 async function deleteComment(commentId) {
     if (!confirm('이 댓글을 삭제하시겠습니까?')) return;
-
-    const post = posts.find(p => p.id === currentPostId);
+    const post = findPostById(currentPostId);
     if (!post) return;
-
-    post.comments = post.comments.filter(c => c.id !== commentId);
+    post.comments = post.comments.filter(c => String(c.id) !== String(commentId));
     await savePosts();
     renderDetailView();
     showToast('댓글이 삭제되었습니다.');
@@ -1044,17 +1261,12 @@ async function deleteComment(commentId) {
 async function submitEditReply(commentId, replyId) {
     const input = document.getElementById(`edit-reply-input-${replyId}`);
     const content = input.value.trim();
-    if (!content) {
-        alert('수정할 답댓글 내용을 입력해 주세요.');
-        return;
-    }
-
-    const post = posts.find(p => p.id === currentPostId);
+    if (!content) return alert('수정할 답댓글 내용을 입력해 주세요.');
+    const post = findPostById(currentPostId);
     if (!post) return;
-
-    const comment = post.comments.find(c => c.id === commentId);
+    const comment = post.comments.find(c => String(c.id) === String(commentId));
     if (comment && comment.replies) {
-        const reply = comment.replies.find(r => r.id === replyId);
+        const reply = comment.replies.find(r => String(r.id) === String(replyId));
         if (reply) {
             reply.content = content;
             await savePosts();
@@ -1066,50 +1278,50 @@ async function submitEditReply(commentId, replyId) {
 
 async function deleteReply(commentId, replyId) {
     if (!confirm('이 답댓글을 삭제하시겠습니까?')) return;
-
-    const post = posts.find(p => p.id === currentPostId);
+    const post = findPostById(currentPostId);
     if (!post) return;
-
-    const comment = post.comments.find(c => c.id === commentId);
+    const comment = post.comments.find(c => String(c.id) === String(commentId));
     if (comment && comment.replies) {
-        comment.replies = comment.replies.filter(r => r.id !== replyId);
+        comment.replies = comment.replies.filter(r => String(r.id) !== String(replyId));
         await savePosts();
         renderDetailView();
         showToast('답댓글이 삭제되었습니다.');
     }
 }
 
-function downloadCurrentPostTxt() {
-    const post = posts.find(p => p.id === currentPostId);
-    if (!post) return;
+/* =========================================================
+   게시글 다운로드 / 삭제
+   ========================================================= */
 
+function downloadCurrentPostTxt() {
+    const post = findPostById(currentPostId);
+    if (!post) return;
     const info = getCharCountInfo(post.content);
     const textContent = `제목: ${post.title}\n작성일: ${post.createdAt}${post.updatedAt ? '\n수정일: ' + post.updatedAt : ''}\n태그: ${(post.tags || []).join(', ')}\n글자수: ${info.withSpace}자 / ${info.withoutSpace}자\n\n----------------------------------------\n\n${post.content}`;
-
     const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    
-    const cleanTitle = post.title.replace(/[/\\?%*:|"<>]/g, '_');
-    a.download = `${cleanTitle}.txt`;
+    a.download = `${post.title.replace(/[/\\?%*:|"<>]/g, '_')}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-
     showToast('.txt 파일 다운로드가 시작되었습니다.');
 }
 
 async function confirmDeleteCurrentPost() {
-    if (confirm("정말로 이 게시글을 삭제하시겠습니까? 삭제된 글은 복구할 수 없습니다.")) {
-        posts = posts.filter(p => p.id !== currentPostId);
-        selectedPostIds.delete(currentPostId);
-        await savePosts();
-        showToast("게시글이 삭제되었습니다.");
-        navigateTo('list');
-    }
+    if (!confirm("정말로 이 게시글을 삭제하시겠습니까? 삭제된 글은 복구할 수 없습니다.")) return;
+    posts = posts.filter(p => String(p.id) !== String(currentPostId));
+    selectedPostIds.delete(Number(currentPostId));
+    await savePosts();
+    showToast("게시글이 삭제되었습니다.");
+    navigateTo('list');
 }
+
+/* =========================================================
+   에디터
+   ========================================================= */
 
 function renderEditorView() {
     const postIdInput = document.getElementById('editor-post-id');
@@ -1121,15 +1333,18 @@ function renderEditorView() {
 
     fileInput.value = '';
 
-    if (currentPostId) {
-        const post = posts.find(p => p.id === currentPostId);
-        if (post) {
-            heading.innerText = "게시글 수정";
-            postIdInput.value = post.id;
-            titleInput.value = post.title;
-            tagsInput.value = (post.tags || []).join(', ');
-            contentInput.value = post.content;
-        }
+    // 태그 자동완성 갱신
+    updateTagSuggestions();
+
+    const editingPost = findPostById(currentPostId);
+    const isNew = !editingPost;
+
+    if (editingPost) {
+        heading.innerText = "게시글 수정";
+        postIdInput.value = editingPost.id;
+        titleInput.value = editingPost.title;
+        tagsInput.value = (editingPost.tags || []).join(', ');
+        contentInput.value = editingPost.content;
     } else {
         heading.innerText = "새 소설/게시글 작성";
         postIdInput.value = "";
@@ -1139,6 +1354,9 @@ function renderEditorView() {
     }
 
     updateLiveCharCount();
+
+    // 임시저장 확인 (새 글 / 수정 모두)
+    checkDraft(isNew);
 }
 
 function updateLiveCharCount() {
@@ -1153,7 +1371,7 @@ function editCurrentPost() {
 }
 
 function cancelEditor() {
-    if (currentPostId) {
+    if (currentPostId && findPostById(currentPostId)) {
         navigateTo('detail', currentPostId);
     } else {
         navigateTo('list');
@@ -1163,23 +1381,19 @@ function cancelEditor() {
 function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
-
     if (!file.name.endsWith('.txt')) {
         alert('.txt 확장자의 텍스트 파일만 첨부할 수 있습니다.');
         return;
     }
-
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = function (e) {
         const textContent = e.target.result;
-        const fileNameWithoutExt = file.name.replace(/\.txt$/i, '');
-        document.getElementById('editor-title').value = fileNameWithoutExt;
+        document.getElementById('editor-title').value = file.name.replace(/\.txt$/i, '');
         document.getElementById('editor-content').value = textContent;
-
         updateLiveCharCount();
+        scheduleAutosave();
         showToast(`.txt 파일 내용이 입력란에 자동 적용되었습니다.`);
     };
-
     reader.readAsText(file, 'UTF-8');
 }
 
@@ -1196,47 +1410,58 @@ async function handleFormSubmit(event) {
         return;
     }
 
-    const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
+    const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
 
+    // ---------- 수정 모드 ----------
     if (editingId) {
-        const post = posts.find(p => p.id === parseInt(editingId, 10));
-        if (post) {
-            post.title = title;
-            post.tags = tags;
-            post.content = content;
-            post.updatedAt = formatDate();
-            await savePosts();
-            showToast("게시글이 수정되었습니다.");
-            navigateTo('detail', post.id);
+        const post = findPostById(editingId);
+        if (!post) {
+            alert("수정할 게시글을 찾을 수 없습니다.");
+            navigateTo('list');
+            return;
         }
-    } else {
-        const newId = posts.length > 0 ? Math.max(...posts.map(p => p.id)) + 1 : 1;
-        const newPost = {
-            id: newId,
-            title: title,
-            content: content,
-            tags: tags,
-            createdAt: formatDate(),
-            updatedAt: null,
-            comments: []
-        };
+        post.title = title;
+        post.tags = tags;
+        post.content = content;
+        post.updatedAt = formatDate();
 
-        posts.unshift(newPost);
         await savePosts();
-        showToast("새 게시글이 성공적으로 등록되었습니다.");
-        currentPostId = newPost.id;
-        navigateTo('detail', newPost.id);
+        localStorage.removeItem('novel_draft');   // 저장 성공 → 임시저장 삭제
+        showToast("게시글이 수정되었습니다.");
+        navigateTo('detail', post.id);
+        return;
     }
+
+    // ---------- 새 글 작성 ----------
+    const existingIds = posts.map(p => Number(p.id)).filter(n => !isNaN(n));
+    const newId = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
+
+    const newPost = {
+        id: newId,
+        title,
+        content,
+        tags,
+        createdAt: formatDate(),
+        updatedAt: null,
+        comments: []
+    };
+
+    posts.unshift(newPost);
+    await savePosts();
+    localStorage.removeItem('novel_draft');       // 저장 성공 → 임시저장 삭제
+
+    showToast("새 게시글이 성공적으로 등록되었습니다.");
+    navigateTo('detail', newId);
 }
 
-function renderApp() {
+/* =========================================================
+   부트스트랩
+   ========================================================= */
+
+async function initApp() {
     initDarkMode();
-    loadPosts();
+    await loadPosts();
+    navigateTo('list');
 }
 
-window.onload = function() {
-    initDarkMode();
-    loadPosts().then(() => {
-        navigateTo('list');
-    });
-};
+window.addEventListener('DOMContentLoaded', initApp);
